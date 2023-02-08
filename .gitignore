@@ -1,0 +1,16 @@
+*.json
+*.fir
+*.v
+*.bsp
+*.idea
+*.metals
+*.bloop
+*/project/
+*/target/
+*/test_run_dir/
+*.vcd
+project/
+target/
+obj_dir/
+cpu-test/cpuTestbench
+!cpu-test/cpuTestbench.v
