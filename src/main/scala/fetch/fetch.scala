@@ -36,7 +36,7 @@ class fetch extends Module {
   })
 
   // issuing instructions to pc
-  val decodeIssue = IO(new issueInstrFrmFetch)
+  val toDecode = IO(new issueInstrFrmFetch)
 
   // receiving results of branches in order
   val branchRes   = IO(new branchResToFetch)
