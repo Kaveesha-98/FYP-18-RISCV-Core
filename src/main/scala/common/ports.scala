@@ -1,4 +1,4 @@
-package common.ports
+package pipeline.ports
 
 /**
   * * * * * IMPORTANT * * * * * 
@@ -43,8 +43,8 @@ import chisel3.experimental.IO
   *   has fired.
   */
 class composableInterface extends Bundle {
-  val ready = IO(Input(Bool()))
-  val fired = IO(Output(Bool()))
+  val ready = Output(Bool())
+  val fired = Input(Bool())
 }
 
 /**
@@ -66,21 +66,32 @@ class composableInterface extends Bundle {
   * "issueInstrFrmFetch.ready && recivInstrFrmFetch.ready && \
   * (!recivInstrFrmFetch.expected.valid || (recivInstrFrmFetch.expected.pc === issueInstrFrmFetch.expected.pc))"
   */
+
+/**
+  * Rule - pass_instruction_to_decode
+  * 
+  * fetch-unit port
+  */
 class issueInstrFrmFetch extends composableInterface {
-  val pc          = IO(Output(UInt(64.W)))
-  val instruction = IO(Output(UInt(32.W)))
-  val expected    = IO(new Bundle {
-    val valid = Input(Bool())
-    val pc    = Input(UInt(64.W))
+  val pc          = Output(UInt(64.W))
+  val instruction = Output(UInt(32.W))
+  val expected    = Input(new Bundle {
+    val valid = Bool()
+    val pc    = UInt(64.W)
   })
 }
 
+/**
+  * Rule - pass_instruction_to_decode
+  * 
+  * decode unit port
+  */
 class recivInstrFrmFetch extends composableInterface {
-  val pc          = IO(Input(UInt(64.W)))
-  val instruction = IO(Input(UInt(32.W)))
-  val expected    = IO(new Bundle {
-    val valid = Output(Bool())
-    val pc    = Output(UInt(64.W))
+  val pc          = Input(UInt(64.W))
+  val instruction = Input(UInt(32.W))
+  val expected    = Output(new Bundle {
+    val valid = Bool()
+    val pc    = UInt(64.W)
   })
 } 
 
@@ -93,6 +104,12 @@ class recivInstrFrmFetch extends composableInterface {
   * 
   * Firing branchResFrmDecode.ready && branchResToFetch.ready
   */
+
+/**
+  * Rule - passing_branch_results
+  * 
+  * decode unit port
+  */
 class branchResFrmDecode extends composableInterface {
   val isBranch      = Output(Bool()) // this signal was added to account for dynamic changes in instruction memory(This one might not be needed)
   val branchTaken   = Output(Bool())
@@ -100,6 +117,11 @@ class branchResFrmDecode extends composableInterface {
   val pcAfterBrnach = Output(UInt(32.W)) // pc of the next instruction after branch
 }
 
+/**
+  * Rule - passing_branch_results
+  * 
+  * fetch unit port
+  */
 class branchResToFetch extends composableInterface {
   val isBranch      = Input(Bool()) // this signal was added to account for dynamic changes in instruction memory(This one might not be needed)
   val branchTaken   = Input(Bool())
