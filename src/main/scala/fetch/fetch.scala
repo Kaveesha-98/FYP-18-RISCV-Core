@@ -25,6 +25,9 @@ import pipeline.ports._
   * additional information on ports can be found on common/ports.scala 
   */
 class fetch extends Module {
+  /**
+    * Inputs and Outputs of the module
+    */
 
   // interface with cache
   val cache = IO(new Bundle {
@@ -37,4 +40,8 @@ class fetch extends Module {
 
   // receiving results of branches in order
   val branchRes   = IO(new branchResToFetch)
+
+  /**
+    * Internal of the module goes here
+    */
 }
