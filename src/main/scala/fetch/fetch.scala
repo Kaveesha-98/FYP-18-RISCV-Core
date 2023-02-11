@@ -22,6 +22,7 @@ import pipeline.ports._
   * 
   * cache is used to access instruction memory.
   *
+  * additional information on ports can be found on common/ports.scala 
   */
 class fetch extends Module {
 
