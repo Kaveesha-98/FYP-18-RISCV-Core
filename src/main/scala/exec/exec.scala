@@ -7,147 +7,199 @@ import chisel3.experimental.IO
 
 // definition of all ports can be found here
 import pipeline.ports._
+import pipeline.configuration.coreConfiguration._
+
+class pullToPipeline extends composableInterface {
+  val robAddr     = Input(UInt(robAddrWidth.W))
+  val src1        = Input(UInt(64.W))
+  val src2        = Input(UInt(64.W))
+  val writeData   = Input(UInt(64.W))
+  val instruction = Input(UInt(32.W))
+}
+
+class pushToMemory extends composableInterface {
+  val robAddr     = Output(UInt(robAddrWidth.W))
+  val memAddress  = Output(UInt(64.W))
+  val writeData   = Output(UInt(64.W))
+  val instruction = Output(UInt(32.W))
+}
+
+class pushExecResultToRob extends composableInterface {
+  val robAddr     = Output(UInt(robAddrWidth.W))
+  val execResult  = Output(UInt(robAddrWidth.W))
+}
 
 class exec extends Module {
+
+  val toMemory  = IO(new pushToMemory)
+  val memReqBuffer = RegInit((new Bundle{
+    val waiting     = Bool()
+    val robAddr     = UInt(robAddrWidth.W)
+    val memAddress  = UInt(64.W)
+    val writeData   = UInt(64.W)
+    val instruction = UInt(32.W)
+  }).Lit(
+    _.waiting     -> false.B,
+    _.robAddr     -> 0.U,
+    _.memAddress  -> 0.U,
+    _.writeData   -> 0.U,
+    _.instruction -> 0.U
+  ))
+  toMemory.ready        := memReqBuffer.waiting
+  toMemory.robAddr      := memReqBuffer.robAddr
+  toMemory.memAddress   := memReqBuffer.memAddress
+  toMemory.writeData    := memReqBuffer.writeData
+  toMemory.instruction  := memReqBuffer.instruction
+
+  val toRob     = IO(new pushExecResultToRob)
+  val robPushBuffer = RegInit((new Bundle{
+    val waiting = Bool()
+    val robAddr = UInt(robAddrWidth.W)
+    val execResult = UInt(robAddrWidth.W)
+  }).Lit(
+    _.waiting -> false.B,
+    _.robAddr -> 0.U,
+    _.execResult -> 0.U
+  ))
+  toRob.ready := robPushBuffer.waiting
+  toRob.robAddr := robPushBuffer.robAddr
+  toRob.execResult := robPushBuffer.execResult
+
+  val fromIssue = IO(new pullToPipeline)
+
+  val bufferedEntries = Seq.fill(2)((RegInit((new Bundle{
+    val free = Bool()
+		val robAddr 	= UInt(robAddrWidth.W)
+    val src1 = UInt(64.W)
+		val src2 = UInt(64.W)
+		val writeData 	= UInt(64.W)
+    val instruction = UInt(32.W)
+	}).Lit(
+		_.free 	      -> true.B,
+    _.robAddr     -> 0.U,
+		_.src1	      -> 0.U,
+		_.src2 		    -> 0.U,
+    _.writeData   -> 0.U,
+    _.instruction -> 0.U
+	))))
+
+  // as long as the free buffer is available the module can accept new requests
+  fromIssue.ready := bufferedEntries(1).free
+
+  // bufferedEntries(0) will be current executing entry
+  val nextExecutingEntry = Wire(bufferedEntries(0).cloneType)
+
+  when(!bufferedEntries(1).free) {
+    nextExecutingEntry := bufferedEntries(1)
+  }.otherwise {
+    nextExecutingEntry.free         := !(fromIssue.fired && fromIssue.ready)
+    nextExecutingEntry.robAddr      := fromIssue.robAddr
+    nextExecutingEntry.src1         := fromIssue.src1
+    nextExecutingEntry.src2         := fromIssue.src2
+    nextExecutingEntry.writeData    := fromIssue.writeData
+    nextExecutingEntry.instruction  := fromIssue.instruction 
+  }
+  
   /**
-    * Inputs and Outputs of the module
+    * Processing the currently scheduled entry. To process the entry, the result buffers
+    * (to rob and/or memory) needs to free or the pending entry is accepted in sampling 
+    * cycle.
     */
+  val updateCurrentEntry = (bufferedEntries(0).instruction(6, 2) =/= BitPat("b0?000") && (!robPushBuffer.waiting || toRob.ready)) ||
+    (bufferedEntries(0).instruction(6, 2) === BitPat("b0?000") && (!memReqBuffer.waiting || toMemory.ready))
 
-  // recieve instruction from decode unit
-  val decodeIssuePort = IO(Flipped(DecoupledIO(new DecodeIssuePort())))
+  when(updateCurrentEntry) {
+    bufferedEntries(0) := nextExecutingEntry
+  }
 
-  // sending the instruction down the pipeline
-  val aluIssuePort = IO(DecoupledIO(new AluIssuePort()))
+  // when current entry can't be processed, the next one is buffered
+  when(!updateCurrentEntry) {
+    bufferedEntries(0).free         := !(fromIssue.fired && fromIssue.ready)
+    bufferedEntries(0).robAddr      := fromIssue.robAddr
+    bufferedEntries(0).src1         := fromIssue.src1
+    bufferedEntries(0).src2         := fromIssue.src2
+    bufferedEntries(0).writeData    := fromIssue.writeData
+    bufferedEntries(0).instruction  := fromIssue.instruction 
+  }
 
-  def getsWriteBack(recievedIns: DecodeIssuePort): AluIssuePort = {
-    // function to execute a given instruction
-    val result = Wire(new AluIssuePort)
-    def getResult(pattern: (chisel3.util.BitPat, chisel3.UInt), prev: UInt) = pattern match {
-      case (bitpat, result) => Mux(recievedIns.instruction === bitpat, result, prev)
-    }
+  // buffered entry is sent to processing
+  when(updateCurrentEntry && !bufferedEntries(1).free) {
+    bufferedEntries(1).free := true.B
+  }
 
+  val execResult = {
     def result32bit(res: UInt) =
       Cat(Fill(32, res(31)), res(31, 0))
 
-    val immediate = recievedIns.immediate
-    val pc = recievedIns.pc
-    val rs1 = recievedIns.rs1
-    val rs2 = recievedIns.rs2
-
+    val instruction = bufferedEntries(0).instruction
+    val src1 = bufferedEntries(0).src1
+    val src2 = bufferedEntries(0).src2
     /**
-      * For aithmatic operations that includes immedaite, rs2 will have that immediate.
-      */
-
-    result.aluResult := {
-      /**
         * 64 bit operations, indexed with funct3, op-imm, op
         */
-      val arithmetic64 = VecInit.tabulate(8)(i => i match {
-        case 0 => Mux(Cat(recievedIns.instruction(30), recievedIns.instruction(5)) === "b11".U, rs1 - rs2, rs1 + rs2)
-        case 1 => (rs1 << rs2(5, 0))
-        case 2 => (rs1.asSInt < rs2.asSInt).asUInt
-        case 3 => (rs1 < rs2).asUInt
-        case 4 => (rs1 ^ rs2)
-        case 5 => Mux(recievedIns.instruction(30).asBool, (rs1.asSInt >> rs2(5, 0)).asUInt, (rs1 >> rs2(5, 0)))
-        case 6 => (rs1 | rs2)
-        case 7 => (rs1 & rs2)
-      })(recievedIns.instruction(14, 12))
+    val arithmetic64 = VecInit.tabulate(8)(i => i match {
+      case 0 => Mux(Cat(instruction(30), instruction(5)) === "b11".U, src1 - src2, src1 + src2)
+      case 1 => (src1 << src2(5, 0))
+      case 2 => (src1.asSInt < src2.asSInt).asUInt
+      case 3 => (src1 < src2).asUInt
+      case 4 => (src1 ^ src2)
+      case 5 => Mux(instruction(30).asBool, (src1.asSInt >> src2(5, 0)).asUInt, (src1 >> src2(5, 0)))
+      case 6 => (src1 | src2)
+      case 7 => (src1 & src2)
+    })(instruction(14, 12))
 
-      /**
-        * 32 bit operations, indexed with funct3, op-imm-32, op-32
-        */
-      val arithmetic32 = VecInit.tabulate(4)(i => i match {
-        case 0 => Mux(Cat(recievedIns.instruction(30), recievedIns.instruction(5)) === "b11".U, result32bit(rs1 - rs2), result32bit(rs1 + rs2)) // add & sub
-        case 1 => (result32bit(rs1 << rs2(4, 0))) // sll\iw
-        case 2 => (result32bit(rs1 << rs2(4, 0))) // filler
-        case 3 => Mux(recievedIns.instruction(30).asBool, result32bit((rs1(31, 0).asSInt >> rs2(4, 0)).asUInt), result32bit(rs1(31, 0) >> rs2(4, 0))) // sra\l\iw
-      })(Cat(recievedIns.instruction(14), recievedIns.instruction(12)))
+    /**
+      * 32 bit operations, indexed with funct3, op-imm-32, op-32
+      */
+    val arithmetic32 = VecInit.tabulate(4)(i => i match {
+      case 0 => Mux(Cat(instruction(30), instruction(5)) === "b11".U, result32bit(src1 - src2), result32bit(src1 + src2)) // add & sub
+      case 1 => (result32bit(src1 << src2(4, 0))) // sll\iw
+      case 2 => (result32bit(src1 << src2(4, 0))) // filler
+      case 3 => Mux(instruction(30).asBool, result32bit((src1(31, 0).asSInt >> src2(4, 0)).asUInt), result32bit(src1(31, 0) >> src2(4, 0))) // sra\l\iw
+    })(Cat(instruction(14), instruction(12)))
 
-      /**
-        * Taken from register mapping in the instruction listing risc-spec
-        */
-      VecInit.tabulate(7)(i => i match {
-        case 0 => (rs1 + immediate) // address calculation for memory access
-        case 1 => (pc + 4.U) // jal link address
-        case 2 => (pc + 4.U) //(63, 0) // filler
-        case 3 => (pc + 4.U) //(63, 0) jalr link address
-        case 4 => arithmetic64 // (63, 0) op-imm, op
-        case 5 => (immediate + Mux(recievedIns.instruction(5).asBool, 0.U, pc)) // (63, 0) // lui and auipc
-        case 6 => arithmetic32 // op-32, op-imm-32
-      })(recievedIns.instruction(4, 2))
+    /**
+      * Taken from register mapping in the instruction listing risc-spec
+      */
+    // possible place for resource optimization
+    VecInit.tabulate(7)(i => i match {
+      case 0 => (src1 + src2) // address calculation for memory access
+      case 1 => (src1 + src2) // jal link address
+      case 2 => (src1 + src2) //(63, 0) // filler
+      case 3 => (src1 + src2) //(63, 0) jalr link address
+      case 4 => arithmetic64 // (63, 0) op-imm, op
+      case 5 => (src2 + Mux(instruction(5).asBool, 0.U, src1)) // (63, 0) // lui and auipc
+      case 6 => arithmetic32 // op-32, op-imm-32
+    })(instruction(4, 2))
+  }
+
+  val memAddress = bufferedEntries(0).src1 + bufferedEntries(0).src2
+
+  when(updateCurrentEntry) {
+    when(bufferedEntries(0).instruction(6, 2) === BitPat("b0?000")) {
+      memReqBuffer.robAddr := bufferedEntries(0).robAddr
+      memReqBuffer.memAddress := memAddress
+      memReqBuffer.writeData := bufferedEntries(0).writeData
+      memReqBuffer.instruction := bufferedEntries(0).instruction
+    }.otherwise {
+      robPushBuffer.execResult := execResult
+      robPushBuffer.robAddr := bufferedEntries(0).robAddr
     }
-
-    val branchTaken = (Seq(
-      rs1 === rs2,
-      rs1 =/= rs2,
-      rs1.asSInt < rs2.asSInt,
-      rs1.asSInt >= rs2.asSInt,
-      rs1 < rs2,
-      rs1 >= rs2
-    ).zip(Seq(0, 1, 4, 5, 6, 7).map(i => i.U === recievedIns.instruction(14, 12))
-    ).map(condAndMatch => condAndMatch._1 && condAndMatch._2).reduce(_ || _))
-
-    val brachNextAddress = Mux(branchTaken, (pc + immediate), (pc + 4.U))
-
-    result.nextInstPtr := Seq(
-        BitPat("b?????????????????????????1101111") -> (pc + immediate), // jal
-        BitPat("b?????????????????????????1100111") -> (rs1 + immediate), //jalr
-        BitPat("b?????????????????????????1100011") -> brachNextAddress, // branches
-    ).foldRight((pc + 4.U))(getResult)
-    result.instruction := recievedIns.instruction
-    result.rs2 := recievedIns.rs2
-    result
   }
 
-  val decodeIssueBuffer = RegInit(new Bundle{
-    val valid   = Bool()
-    val bits    = (new DecodeIssuePort())
-  }.Lit(
-    _.valid -> false.B,
-    _.bits.pc -> 0.U,
-    _.bits.instruction -> 0.U,
-    _.bits.rs1 -> 0.U,
-    _.bits.rs2 -> 0.U,
-    _.bits.immediate -> 0.U
-  ))
-
-  val aluIssueBuffer = RegInit(new Bundle{
-    val valid   = Bool()
-    val bits    = (new AluIssuePort())
-  }.Lit(
-    _.valid -> false.B,
-    _.bits.nextInstPtr -> 0.U,
-    _.bits.instruction -> 0.U,
-    _.bits.aluResult -> 0.U,
-    _.bits.rs2 -> 0.U
-  ))
-
-  // no instructions are accepted while there is a buffered instruction
-  decodeIssuePort.ready := !decodeIssueBuffer.valid
-
-  // an instruction is buffered if the older instruction is not yet accepted by the memory access unit
-  when((decodeIssuePort.ready && decodeIssuePort.valid) && (aluIssuePort.valid && !aluIssuePort.ready)) {
-    decodeIssueBuffer.bits  := decodeIssuePort.bits
-    decodeIssueBuffer.valid := true.B
-  }.elsewhen(decodeIssueBuffer.valid && aluIssuePort.valid && aluIssuePort.ready) {
-    // older instruction was accepted by memory unit, processing the buffered instruction
-    decodeIssueBuffer.valid := false.B
-  }
-  // buffered instruction is given priority
-  val processingEntry = Mux(decodeIssueBuffer.valid, decodeIssueBuffer.bits, decodeIssuePort.bits) 
-
-  val entryValid = decodeIssueBuffer.valid || decodeIssuePort.valid
-
-  when(entryValid && (!aluIssueBuffer.valid || aluIssuePort.ready)) {
-    // either the old instruction was accepted, or no old instruction
-    aluIssueBuffer.bits := getsWriteBack(processingEntry)
-    aluIssueBuffer.valid := true.B
-  }.elsewhen(!entryValid && (aluIssuePort.valid && aluIssuePort.ready)) {
-    aluIssueBuffer.valid := false.B
+  when(robPushBuffer.waiting) {
+    // condition to deassert waiting
+    robPushBuffer.waiting := !toRob.fired || bufferedEntries(0).free || (bufferedEntries(0).instruction(6, 2) === BitPat("b0?000"))
+  }.otherwise {
+    // asserting waiting
+    robPushBuffer.waiting := !bufferedEntries(0).free && (bufferedEntries(0).instruction(6, 2) =/= BitPat("b0?000"))
   }
 
-  aluIssuePort.valid := aluIssueBuffer.valid
-  aluIssuePort.bits   := aluIssueBuffer.bits
+  when(memReqBuffer.waiting) {
+    memReqBuffer.waiting := !toMemory.fired || bufferedEntries(0).free || (bufferedEntries(0).instruction(6, 2) =/= BitPat("b0?000"))
+  }.otherwise {
+    memReqBuffer.waiting := !bufferedEntries(0).free && (bufferedEntries(0).instruction(6, 2) === BitPat("b0?000"))
+  }
 }
 
 object exec extends App {
