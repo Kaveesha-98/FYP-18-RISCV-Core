@@ -52,6 +52,18 @@ class fetch(val fifo_size: Int) extends Module {
   // receiving results of branches in order
   val branchRes   = IO(new branchResToFetch)
 
+  // request to implement fence_i
+  val carryOutFence = IO(new composableInterface)
+
+  // request to update cache lines
+  // once fired all pending requests to cache are invalidated
+  // updateAllCachelines and cache.req **cannot** be ready at the same time
+  val updateAllCachelines = IO(new composableInterface)
+
+  // after updateAllCachelines is fired, this should be ready
+  // will fire once all cachelines in I$ is updated
+  val cachelinesUpdatesResp = IO(new composableInterface)
+
   /**
     * Internal of the module goes here
     */
