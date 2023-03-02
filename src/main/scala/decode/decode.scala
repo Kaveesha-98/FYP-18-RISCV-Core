@@ -8,6 +8,28 @@ import pipeline.decode.constants._
 
 // definition of all ports can be found here
 import pipeline.ports._
+import pipeline.configuration.coreConfiguration._
+
+// once the rules is finalized, this port will be added to ports.scala
+class pushInsToPipeline extends composableInterface {
+  // IMPORTANT - value of x0 should never be issued with *.fromRob asserted
+  val src1 = Output(new Bundle {// {jal, jalr, auipc - pc}, {loads, stores, rops*, iops*, conditionalBranches - rs1}
+    val fromRob = Bool()
+    val data = UInt(64.W)
+    val robAddr = UInt(robAddrWidth.W)
+  })
+  val src2 = Output(src1.cloneType) // {jalr, jal - 4.U}, {loads, stores, iops*, auipc - immediate}, {rops* - rs2}
+  val writeData = Output(src1.cloneType)
+  val instruction = Output(UInt(32.W))
+  val robAddr = Input(UInt(robAddrWidth)) // allocated address in rob
+}
+
+// once the rules is finalized, this port will be added to ports.scala
+class pullCommitFrmRob extends composableInterface {
+  // for now consider that instructions that don't get writeback to register file are not returned back to Decode
+  val robAddr = Input(UInt(robAddrWidth.W))
+  val WriteBackResult = Input(UInt(64.W))
+}
 
 /**
   * This module will output whether the input instruction is a branch or not
@@ -53,10 +75,10 @@ class decode extends Module {
   val branchRes = IO(new branchResFrmDecode)
 
   // sends the decoded instruction to the next stage of the pipeline
-  val toExec = IO(DecoupledIO(new DecodeIssuePort))
+  val toExec = IO(new pushInsToPipeline)
 
   // receives results to write into the register file
-  val writeBackResult = IO(Input(new WriteBackResult))
+  val writeBackResult = IO(new pullCommitFrmRob)
 
   /**
     * Internal of the module goes here
@@ -381,7 +403,8 @@ class decode extends Module {
   //  -----------------------------------------------------------------------------------------------------------------------------------------------------------
 
 }
-
+/* 
+commented out because new additions can cause issues with building other codes
 object DecodeUnit extends App{
   emitVerilog(new decode())
-}
+} */
