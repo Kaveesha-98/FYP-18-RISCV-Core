@@ -21,7 +21,7 @@ class pushInsToPipeline extends composableInterface {
   val src2 = Output(src1.cloneType) // {jalr, jal - 4.U}, {loads, stores, iops*, auipc - immediate}, {rops* - rs2}
   val writeData = Output(src1.cloneType)
   val instruction = Output(UInt(32.W))
-  val robAddr = Input(UInt(robAddrWidth)) // allocated address in rob
+  val robAddr = Input(UInt(robAddrWidth.W)) // allocated address in rob
 }
 
 // once the rules is finalized, this port will be added to ports.scala
@@ -63,7 +63,7 @@ class WriteBackResult extends Bundle {
   *
   */
 class decode extends Module {
-  /**
+/*   /**
     * Inputs and Outputs of the module
     */
 
@@ -400,7 +400,7 @@ class decode extends Module {
   } otherwise {
     expectedPC := pc + 4.U
   }
-  //  -----------------------------------------------------------------------------------------------------------------------------------------------------------
+  //  ------------------------ *///-----------------------------------------------------------------------------------------------------------------------------------
 
 }
 /* 

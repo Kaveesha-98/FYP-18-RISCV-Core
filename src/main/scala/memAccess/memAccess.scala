@@ -11,199 +11,132 @@ import chisel3.experimental.BundleLiterals._
 import chisel3.experimental.IO
 
 import pipeline.ports._
+import pipeline.configuration.coreConfiguration._
 
-class channel_a(
-  val z : Int = 2,
-  val o : Int = 1,
-  val a : Int = 64,
-  val w : Int = 8,
-) extends Bundle {
-  val opcode      = Output(UInt(3.W))
-  val param       = Output(UInt(3.W))
-  val size        = Output(UInt(z.W))
-  val source      = Output(UInt(o.W))
-  val address     = Output(UInt(a.W))
-  val mask        = Output(UInt(w.W))
-  val data        = Output(UInt((8*w).W))
-  val valid       = Output(UInt(1.W))
-  val ready       = Input(UInt(1.W))
-
-  class sourceReg extends Bundle {
-    val opcode      = Output(UInt(3.W))
-    val param       = Output(UInt(3.W))
-    val size        = Output(UInt(z.W))
-    val source      = Output(UInt(o.W))
-    val address     = Output(UInt(a.W))
-    val mask        = Output(UInt(w.W))
-    val data        = Output(UInt((8*w).W))
-    val valid       = Output(UInt(1.W))
-  }
-
-  def init() =
-    (new sourceReg).Lit(
-      _.opcode -> 0.U,
-      _.param -> 0.U,
-      _.size -> 0.U,
-      _.source -> 0.U,
-      _.address -> 0.U,
-      _.mask -> 0.U,
-      _.data -> 0.U,
-      _.valid -> 0.U
-    )
-
-    def :=(sink: sourceReg):Unit = {
-      this.opcode := sink.opcode
-      this.param       := sink.param
-      this.size        := sink.size
-      this.source      := sink.source
-      this.address     := sink.address
-      this.mask        := sink.mask
-      this.data        := sink.data
-      this.valid       := sink.valid
-    } 
+class pullPipelineMemReq extends composableInterface {
+  val address  = Input(UInt(64.W))
+  val writeData = Input(UInt(64.W)) // not aligned
+  val robAddr = Input(UInt(robAddrWidth.W))
+  val instruction = Input(UInt(32.W))
 }
 
-class channel_d(
-    val z : Int = 2,
-    val o : Int = 1,
-    val i : Int = 1,
-    val w : Int = 8,
-) extends Bundle {
-val opcode  = Input(UInt(3.W))
-  val param   = Input(UInt(2.W))
-  val size    = Input(UInt(z.W))
-  val source  = Input(UInt(o.W))
-  val sink    = Input(UInt(i.W))
-  val data    = Input(UInt((8*w).W))
-  val error   = Input(UInt(1.W))
-  val valid   = Input(UInt(1.W))
-  val ready   = Output(UInt(1.W))
+class AXI(
+  idWidth: Int = 2,
+  addressWidth: Int = 32,
+  dataWidth: Int = 32
+)extends Bundle {
+  val AWID = Output(UInt(idWidth.W))
+	val AWADDR = Output(UInt(addressWidth.W))
+	val AWLEN = Output(UInt(8.W))
+	val AWSIZE = Output(UInt(3.W))
+	val AWBURST = Output(UInt(2.W))
+	val AWLOCK = Output(UInt(1.W))
+	val AWCACHE = Output(UInt(4.W))
+	val AWPROT = Output(UInt(3.W))
+	val AWQOS = Output(UInt(4.W))
+	val AWVALID = Output(Bool())
+	val AWREADY = Input(Bool())
+
+	val WDATA = Output(UInt(dataWidth.W))
+	val WSTRB = Output(UInt((dataWidth/8).W))
+	val WLAST = Output(Bool())
+	val WVALID = Output(Bool())
+	val WREADY = Input(Bool())
+
+	val BID = Input(UInt(idWidth.W))
+	val BRESP = Input(UInt(2.W))
+	val BVALID = Input(Bool())
+	val BREADY = Output(Bool())
+
+	val ARID = Output(UInt(idWidth.W))
+	val ARADDR = Output(UInt(addressWidth.W))
+	val ARLEN = Output(UInt(8.W))
+	val ARSIZE = Output(UInt(3.W))
+	val ARBURST = Output(UInt(2.W))
+	val ARLOCK = Output(UInt(1.W))
+	val ARCACHE = Output(UInt(4.W))
+	val ARPROT = Output(UInt(3.W))
+	val ARQOS = Output(UInt(4.W))
+	val ARVALID = Output(Bool())
+	val ARREADY = Input(Bool())
+
+	val RID = Input(UInt(idWidth.W))
+	val RDATA = Input(UInt(dataWidth.W))
+	val RRESP = Input(UInt(2.W))
+	val RLAST = Input(Bool())
+	val RVALID = Input(Bool())
+	val RREADY = Output(Bool())
 }
 
-import scala.math._
-class memAccess extends Module {
-
-  val aluIssuePort = IO(Flipped(DecoupledIO(new AluIssuePort)))
-  val dataPort = IO(new Bundle(){
-    val a = new channel_a()
-    val d = new channel_d()
+class memAccess extends Module{
+  /* val fromPipeline = IO(new pullPipelineMemReq)
+  val dCache = IO(new Bundle{
+    val req = DecoupledIO(new Bundle{
+      val address   = UInt(64.W)
+      val writeData = UInt(64.W) // right justified as in rs2
+      val writeMask = UInt(8.W)
+      val funct3    = UInt(3.W)
+      val isWrite   = Bool()
+    })
+    val resp = IO(new Bundle{
+      val justifiedLoadData = UInt(64.W)
+    })
   })
-  val memoryIssuePort = IO(DecoupledIO(new MemoryIssuePort))
 
-  val passThrough :: waitOnMemReq :: waitOnMemResp :: waitWriteBack :: Nil = Enum(4)
-  val stateReg = RegInit(passThrough)
+  val peripherals = IO(new AXI)
 
-  val recieveBuffer = Reg(new AluIssuePort)
-  when (stateReg === passThrough && aluIssuePort.valid && (
-    (!memoryIssuePort.ready || aluIssuePort.bits.instruction(6, 0) === BitPat("b0?00011"))
-  )) {
-    recieveBuffer := aluIssuePort.bits
-  } 
+  val dram :: peripheral :: Nil = Enum(2)
 
-  val a_bits = RegInit((dataPort.a.init()))
-  dataPort.a := a_bits
+  val arvalid, rready, awvalid, wvalid, wready = RegInit(false.B)
+  
+  // if interfaces are ready then the request is store in a buffer
+  val reqBuffer = RegInit((new Bundle{
+    val entryType = dram.cloneType
+		val free 	= Bool()
+    val address  = Input(UInt(64.W))
+    val writeData = Input(UInt(64.W)) // not aligned
+    val robAddr = Input(UInt(robAddrWidth.W))
+    val instruction = Input(UInt(32.W))
+	}).Lit(
+    _.entryType     -> dram,
+		_.free 	        -> true.B,
+    _.address       -> 0.U,
+		_.writeData 	  -> 0.U,
+		_.robAddr		    -> 0.U,
+    _.instruction   -> 0.U
+	))
 
-  when (stateReg === passThrough && aluIssuePort.valid && aluIssuePort.bits.instruction(6, 0) === BitPat("b0?00011")) {
-    /**
-      * Setting registers to send request
-      * Unaligned accesses are not supported in hardware
-      */
-    a_bits.opcode := Mux(aluIssuePort.bits.instruction(5).asBool, 1.U, 4.U)
-    a_bits.param := 0.U
-    a_bits.size := aluIssuePort.bits.instruction(13, 12)
-    a_bits.source := 0.U
-    a_bits.address := aluIssuePort.bits.aluResult
-    val unalignedMask = MuxLookup(aluIssuePort.bits.instruction(13, 12), 255.U(8.W), Seq.tabulate(3)(i => (i.U -> ((1 << (1 << i))-1).U)))
-    a_bits.mask := unalignedMask << aluIssuePort.bits.aluResult(2, 0)
-    a_bits.data := MuxLookup(aluIssuePort.bits.aluResult(2, 0), aluIssuePort.bits.rs2, Seq.tabulate(8)(
-      i => (i.U -> (aluIssuePort.bits.rs2 << (8*i)))))
-    a_bits.valid := 1.U
-  }
-
-  when (stateReg === waitOnMemReq && dataPort.a.ready.asBool) {
-    /**
-      * Request has been accepted
-      */
-    a_bits.valid := 0.U
-  }
-
-  val memIssueBuffer = Reg(new MemoryIssuePort())
-  val memIssueValid = RegInit(false.B)
-  memoryIssuePort.bits := memIssueBuffer
-  memoryIssuePort.valid := memIssueValid
-
-  val justifiedLoadData = MuxLookup(recieveBuffer.aluResult(2, 0), dataPort.d.data, Seq.tabulate(8)(
-    i => (i.U -> (dataPort.d.data >> (8*i)))))
-  val signExtendedData = MuxLookup(recieveBuffer.instruction(13,12), justifiedLoadData, Seq(
-    0.U -> Cat(Fill(56, justifiedLoadData(7)), justifiedLoadData(7, 0)),
-    1.U -> Cat(Fill(48, justifiedLoadData(15)), justifiedLoadData(15, 0)),
-    2.U -> Cat(Fill(32, justifiedLoadData(31)), justifiedLoadData(31, 0))
+  val peripheralRequest = RegInit(reqBuffer.cloneType.Lit(
+    _.entryType     -> peripheral,
+		_.free 	        -> true.B,
+    _.address       -> 0.U,
+		_.writeData 	  -> 0.U,
+		_.robAddr		    -> 0.U,
+    _.instruction   -> 0.U
   ))
-  val unsignExtendedData = MuxLookup(recieveBuffer.instruction(13,12), justifiedLoadData, Seq(
-    0.U -> Cat(0.U(56.W), justifiedLoadData(7, 0)),
-    1.U -> Cat(0.U(48.W), justifiedLoadData(15, 0)),
-    2.U -> Cat(0.U(32.W), justifiedLoadData(31, 0))
-  ))
-  val dataWrtieBack = Mux(recieveBuffer.instruction(14).asBool, unsignExtendedData, signExtendedData)
 
-  when (stateReg === passThrough) {
-    when (memoryIssuePort.ready && aluIssuePort.bits.instruction =/= BitPat("b0?00011")) {
-      memIssueBuffer.instruction := aluIssuePort.bits.instruction
-      memIssueBuffer.nextInstPtr := aluIssuePort.bits.nextInstPtr
-      memIssueBuffer.aluResult := aluIssuePort.bits.aluResult
-      
-      memIssueValid := aluIssuePort.valid
-    }.elsewhen(memoryIssuePort.ready) {
-      memIssueValid := false.B
-    }
-  }. elsewhen (stateReg === waitWriteBack) {
-    when (memoryIssuePort.ready) {
-      memIssueBuffer.instruction := recieveBuffer.instruction
-      memIssueBuffer.nextInstPtr := recieveBuffer.nextInstPtr
-      memIssueBuffer.aluResult := recieveBuffer.aluResult
-      
-      memIssueValid := true.B
-    }
-  }.elsewhen (stateReg === waitOnMemResp && dataPort.d.valid.asBool) {
-    when (memoryIssuePort.ready) {
-      memIssueBuffer.instruction := recieveBuffer.instruction
-      memIssueBuffer.nextInstPtr := recieveBuffer.nextInstPtr
-      memIssueBuffer.aluResult := dataWrtieBack
-      memIssueValid := true.B
-    }.otherwise {
-      recieveBuffer.aluResult := dataWrtieBack
-    }
-  }.elsewhen (memoryIssuePort.ready) {
-    /**
-     * when memory instructions are executing, an instruction  may be issuing
-     */
-    memIssueValid := false.B
-  }
+  // buffers the current request being served
+  val currentRequests = RegInit(VecInit(Seq.fill(2)(RegInit((new Bundle{
+		val free 	= Bool()
+    val address  = Input(UInt(64.W))
+    val writeData = Input(UInt(64.W)) // not aligned
+    val robAddr = Input(UInt(robAddrWidth.W))
+    val instruction = Input(UInt(32.W))
+	}).Lit(
+		_.free 	        -> true.B,
+    _.address       -> 0.U,
+		_.writeData 	  -> 0.U,
+		_.robAddr		    -> 0.U,
+    _.instruction   -> 0.U
+	)))))
 
-  switch(stateReg) {
-    is(passThrough) {
-      when(aluIssuePort.valid && aluIssuePort.bits.instruction(6, 0) === BitPat("b0?00011")) {
-        stateReg := waitOnMemReq
-      }.elsewhen(aluIssuePort.valid && !memoryIssuePort.ready) {
-        stateReg := waitWriteBack
-      }
-    }
-    is(waitOnMemReq) {
-      when(dataPort.a.ready.asBool) { stateReg := waitOnMemResp }
-    }
-    is(waitOnMemResp) {
-      when(dataPort.d.valid.asBool) {
-        stateReg := Mux(memoryIssuePort.ready, passThrough, waitWriteBack)
-      } 
-    }
-    is(waitWriteBack) {
-      when(memoryIssuePort.ready) { stateReg := passThrough }
-    }
-  }
-  aluIssuePort.ready := stateReg === passThrough
-  dataPort.d.ready := stateReg === waitOnMemResp
-}
+  val dramAccess = (fromPipeline.address >= ramBaseAddress) && (fromPipeline.address <= ramHighAddress)
+  val entryType = Mux(dramAccess, dram, peripheral)
 
-object memAccess extends App{
-  (new chisel3.stage.ChiselStage).emitVerilog(new memAccess())
+  fromPipeline.ready := reqBuffer.free
+
+  // a request (for dram or peripheral can come from)
+  dCache.req.valid := (fromPipeline.ready && fromPipeline.fired) || (!reqBuffer.free && (reqBuffer.entryType === dram))
+   */
+
 }

@@ -119,7 +119,7 @@ class fetch(val fifo_size: Int) extends Module {
   toDecode.instruction := cache.resp.bits
   printf(p"${cache} ${PC_fifo.io.deq}\n")
 }
-
+/* 
 object Verilog extends App {
   (new chisel3.stage.ChiselStage).emitVerilog(new fetch(256))
-}
+} */
