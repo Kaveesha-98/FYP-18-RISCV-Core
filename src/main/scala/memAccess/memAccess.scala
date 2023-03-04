@@ -96,9 +96,16 @@ class memAccess extends Module{
 
   val toRob = IO(new pushMemResultToRob)
 
+  // request to implement fences
+  val carryOutFence = IO(new composableInterface)
+
+  val cleanAllCacheLines = IO(new composableInterface)
+
+  val waitingAllReqToFinish = RegInit(false.B)
+
   val dram :: peripheral :: Nil = Enum(2)
 
-  val arvalid, rready, awvalid, wvalid, wlast = RegInit(false.B)
+  val arvalid, rready, awvalid, wvalid, wlast, bready = RegInit(false.B)
   
   // if interfaces are ready then the request is store in a buffer
   val reqBuffer = RegInit((new Bundle{
@@ -120,11 +127,11 @@ class memAccess extends Module{
   val dramAccess = (fromPipeline.address >= ramBaseAddress.U) && (fromPipeline.address <= ramHighAddress.U)
   val entryType = Mux(dramAccess, dram, peripheral)
 
-  fromPipeline.ready := reqBuffer.free
+  fromPipeline.ready := reqBuffer.free && !waitingAllReqToFinish
 
   // a request (for dram or peripheral can come from buffer or "fromPipeline" interface)
   // giving request to dCache
-  dCache.req.valid := (fromPipeline.ready && fromPipeline.fired) || (!reqBuffer.free && (reqBuffer.entryType === dram))
+  dCache.req.valid := (fromPipeline.ready && fromPipeline.fired && dramAccess) || (!reqBuffer.free && (reqBuffer.entryType === dram))
   when( !reqBuffer.free && (reqBuffer.entryType === dram) ) {
     dCache.req.bits.address   := reqBuffer.address
     dCache.req.bits.writeData := reqBuffer.writeData
@@ -150,13 +157,13 @@ class memAccess extends Module{
 
   when(peripheralRequest.free) {
     // When peripheralRequest.free, all arvalid, rready, awvalid, wvalid, bready and wlast should be free
-    when((fromPipeline.ready && fromPipeline.fired) || (!reqBuffer.free && (reqBuffer.entryType =/= dram))) {
+    when((fromPipeline.ready && fromPipeline.fired && !dramAccess) || (!reqBuffer.free && (reqBuffer.entryType =/= dram))) {
       peripheralRequest.free := false.B
       arvalid := Mux(!reqBuffer.free && (reqBuffer.entryType =/= dram), !reqBuffer.instruction(5).asBool, !fromPipeline.instruction(5).asBool)
       rready := Mux(!reqBuffer.free && (reqBuffer.entryType =/= dram), !reqBuffer.instruction(5).asBool, !fromPipeline.instruction(5).asBool)
       awvalid := Mux(!reqBuffer.free && (reqBuffer.entryType =/= dram), reqBuffer.instruction(5).asBool, fromPipeline.instruction(5).asBool)
       wvalid := Mux(!reqBuffer.free && (reqBuffer.entryType =/= dram), reqBuffer.instruction(5).asBool, fromPipeline.instruction(5).asBool)
-      //bready := Mux(!reqBuffer.free && (reqBuffer.entryType =/= dram), reqBuffer.instruction(5).asBool, fromPipeline.instruction(5).asBool)
+      bready := Mux(!reqBuffer.free && (reqBuffer.entryType =/= dram), reqBuffer.instruction(5).asBool, fromPipeline.instruction(5).asBool)
       wlast := Mux(!reqBuffer.free && (reqBuffer.entryType =/= dram), reqBuffer.instruction(5).asBool && (reqBuffer.instruction(13, 12) < 3.U), fromPipeline.instruction(5).asBool && (fromPipeline.instruction(13, 12) < 3.U))
     }
     // buffered request is given priority
@@ -244,7 +251,10 @@ class memAccess extends Module{
     wlast := !wlast
   }
 
-  val peripheralRequestServed = !(peripheralRequest.free) && !(arvalid || rready || awvalid || wvalid)
+  // accepting write response
+  when(peripherals.BREADY && peripherals.BVALID) { bready := false.B }
+
+  val peripheralRequestServed = !(peripheralRequest.free) && !(arvalid || rready || awvalid || wvalid || bready)
 
   // both responses(from peripheral and dram) are buffered here(responseBuffers(0)) before pushing to commit
   // In case both peripheral and dram have responses pending the peripheral is stored to responseBuffers(1)
@@ -286,6 +296,7 @@ class memAccess extends Module{
         case 7 => 0.U
       })(dCache.resp.bits.funct3)
     }.elsewhen(peripheralRequestServed && !peripheralRequest.instruction(5).asBool) {
+      // only reads get written to response buffers
       responseBuffers(0).robAddr := peripheralRequest.robAddr
       responseBuffers(0).writeBackData := readData
     }.otherwise {
@@ -303,6 +314,15 @@ class memAccess extends Module{
   toRob.ready := !responseBuffers(0).free
   toRob.robAddr := responseBuffers(0).robAddr
   toRob.writeBackData := responseBuffers(0).writeBackData
+
+  carryOutFence.ready := !waitingAllReqToFinish
+  // theoritically when and after this rule is fired there should be no instructions from pipeline until all address spaces are coherent
+  when(carryOutFence.ready && carryOutFence.fired) { waitingAllReqToFinish := true.B }
+
+  cleanAllCacheLines.ready := waitingAllReqToFinish && reqBuffer.free && peripheralRequest.free
+
+  // after commiting all requests to memory, wait for next access
+  when(cleanAllCacheLines.ready && cleanAllCacheLines.fired) { waitingAllReqToFinish := false.B }
 }
 
 object memAccess extends App {
