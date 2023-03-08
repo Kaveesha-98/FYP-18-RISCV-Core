@@ -70,8 +70,11 @@ class fetch(val fifo_size: Int) extends Module {
 
   //register defs
   val PC = RegInit(0.U(64.W))
-  val IR = RegInit(0.U(32.W))
   val redirect_bit= RegInit(0.U(1.W))
+  val handle_fenceI= RegInit(0.U(1.W))
+  val clear_cache_req= RegInit(0.U(1.W))
+  val cache_cleared= RegInit(0.U(1.W))
+  val fence_pending= RegInit(0.U(1.W))
 
 
   // initialize BHT and fifo buffer
@@ -85,6 +88,39 @@ class fetch(val fifo_size: Int) extends Module {
   PC_fifo.io.enq.valid := cache.req.valid & cache.req.ready
   PC_fifo.io.deq.ready := cache.resp.valid & cache.resp.ready
   toDecode.pc := PC_fifo.io.deq.bits
+
+  //fence.I
+  val is_fenceI = (cache.resp.bits(6,2) === "b00011".U) & (cache.resp.bits(14,12) === 1.U) & (cache.resp.valid)
+  when (handle_fenceI===1.U){
+    PC_fifo.reset:=1.U
+  }
+  when (handle_fenceI === 0.U){
+    handle_fenceI := is_fenceI
+  }.otherwise{
+    when (clear_cache_req===0.U & cache_cleared === 0.U & fence_pending===0.U){
+      handle_fenceI := 0.U
+    }
+  }
+
+  when (clear_cache_req===0.U & !handle_fenceI===1.U){
+    clear_cache_req := is_fenceI
+  }.elsewhen(updateAllCachelines.fired){
+    clear_cache_req := 0.U
+  }
+
+  when(cache_cleared === 0.U & !handle_fenceI===1.U) {
+    cache_cleared := is_fenceI
+  }.elsewhen(cachelinesUpdatesResp.fired) {
+    cache_cleared := 0.U
+  }
+
+  carryOutFence.ready := fence_pending
+
+  when (fence_pending===0.U & !handle_fenceI===1.U){
+    fence_pending:= is_fenceI
+  }.elsewhen(carryOutFence.fired){
+    fence_pending:=0.U
+  }
 
   //redirect signal calc
   val redirect = Wire(Bool())
@@ -101,25 +137,29 @@ class fetch(val fifo_size: Int) extends Module {
   //PC update logic
   when(redirect_bit===1.U) {
     PC := toDecode.expected.pc
+  }.elsewhen(is_fenceI) {
+    PC := PC_fifo.io.deq.bits + 4.U
   }.elsewhen(cache.req.valid & cache.req.ready) {
     PC := predictor.io.next_pc
   }
   cache.req.bits := PC
 
   //ready valid signal logic
-  cache.req.valid := redirect_bit === 0.U & PC_fifo.io.enq.ready
-  cache.resp.ready := redirect_bit===1.U || toDecode.fired
+  cache.req.valid := redirect_bit === 0.U & PC_fifo.io.enq.ready & !is_fenceI & !(handle_fenceI===1.U)
+  cache.resp.ready := (redirect_bit===1.U || toDecode.fired) & !(handle_fenceI)
+  updateAllCachelines.ready := clear_cache_req
+  cachelinesUpdatesResp.ready := cache_cleared
 
-  when (redirect || redirect_bit===1.U || !cache.resp.valid || !PC_fifo.io.deq.valid ){
+  when (redirect || redirect_bit===1.U || !cache.resp.valid || !PC_fifo.io.deq.valid || is_fenceI || handle_fenceI===1.U){
     toDecode.ready := 0.B
   }.otherwise{
     toDecode.ready := 1.B
   }
 
   toDecode.instruction := cache.resp.bits
-  printf(p"${cache} ${PC_fifo.io.deq}\n")
+  printf(p"${cache} ${updateAllCachelines} ${cachelinesUpdatesResp} ${carryOutFence} ${fence_pending}\n")
 }
-/* 
+
 object Verilog extends App {
-  (new chisel3.stage.ChiselStage).emitVerilog(new fetch(256))
-} */
+  (new chisel3.stage.ChiselStage).emitVerilog(new fetch(4))
+}
