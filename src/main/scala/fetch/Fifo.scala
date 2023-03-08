@@ -2,7 +2,7 @@
 import Chisel.log2Ceil
 import chisel3._
 
-abstract class Fifo[T <: Data ]( gen: T, val depth: Int) extends Module {
+abstract class Fifo[T <: Data ]( gen: T, val depth: Int) extends Module  with RequireSyncReset{
   val io = IO(new FifoIO(gen))
   assert(depth > 0, "Number of buffer elements needs to be larger than 0")
 }
@@ -28,6 +28,7 @@ class RegFifo[T <: Data ]( gen: T, depth: Int) extends Fifo(gen:
   val emptyReg = RegInit(true.B)
   val fullReg = RegInit(false.B)
 
+
   when (io.enq.valid && !fullReg) {
     memReg(writePtr) := io.enq.bits
     emptyReg := false.B
@@ -46,5 +47,6 @@ class RegFifo[T <: Data ]( gen: T, depth: Int) extends Fifo(gen:
   io.deq.valid := !emptyReg
   //printf(p"$io\n")
 }
+
 
 
