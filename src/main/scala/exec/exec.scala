@@ -26,7 +26,7 @@ class pushToMemory extends composableInterface {
 
 class pushExecResultToRob extends composableInterface {
   val robAddr     = Output(UInt(robAddrWidth.W))
-  val execResult  = Output(UInt(robAddrWidth.W))
+  val execResult  = Output(UInt(64.W))
 }
 
 class exec extends Module {
