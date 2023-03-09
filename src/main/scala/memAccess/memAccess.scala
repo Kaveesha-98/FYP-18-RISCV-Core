@@ -82,6 +82,7 @@ class memAccess extends Module{
       val writeData = UInt(64.W) // right justified as in rs2
       val funct3    = UInt(3.W)
       val isWrite   = Bool()
+      val robAddr   = UInt(robAddrWidth.W)
     })
     val resp = Flipped(DecoupledIO(new Bundle{
       // writes do not return a response
@@ -137,11 +138,13 @@ class memAccess extends Module{
     dCache.req.bits.writeData := reqBuffer.writeData
     dCache.req.bits.funct3    := reqBuffer.instruction(14, 12)
     dCache.req.bits.isWrite   := reqBuffer.instruction(5).asBool
+    dCache.req.bits.robAddr   := reqBuffer.robAddr
   }.otherwise {
     dCache.req.bits.address    := fromPipeline.address
     dCache.req.bits.writeData  := fromPipeline.writeData
     dCache.req.bits.funct3     := fromPipeline.instruction(14, 12)
     dCache.req.bits.isWrite    := fromPipeline.instruction(5).asBool
+    dCache.req.bits.robAddr    := fromPipeline.robAddr
   }
 
   val peripheralRequest = RegInit(reqBuffer.cloneType.Lit(
