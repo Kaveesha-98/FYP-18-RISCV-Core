@@ -12,7 +12,7 @@ module iCacheRegisters #(
   input [line_width-1:0] write_line_index,
   input [32*block_size - 1:0] write_block,
   input [tag_width-1, 0] write_tag,
-  input reset, write_in, clock
+  input reset, write_in, clock, invalidate_all
 );
 
   reg [31:0] cache [cache_depth-1:0][block_size-1:0];
@@ -25,7 +25,7 @@ module iCacheRegisters #(
 
   genvar i, j;
   always @(posedge clock) begin
-    if (reset) begin
+    if (reset || invalidate_all) begin
       for (i = 0; i < cache_depth; i++) begin
         validBits[i] <= 1'b0;
       end
