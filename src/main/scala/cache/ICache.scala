@@ -127,16 +127,16 @@ class iCache(
 
   lowLevelMem.RREADY := rready
 
-  when(lowLevelMem.RVALID && lowLevelMem.RREADY) { newInstrBlock := Cat(newInstrBlock(32*(iCacheBlockSize-1) -1, 0), lowLevelMem.RDATA) }
+  when(lowLevelMem.RVALID && lowLevelMem.RREADY && (lowLevelMem.RID === 0.U)) { newInstrBlock := Cat(newInstrBlock(32*(iCacheBlockSize-1) -1, 0), lowLevelMem.RDATA) }
 
   cache.io.write_block := newInstrBlock
   cache.io.write_in := writeToCache
 
   // finish getting new instruction block from low level cache or primary memory(for now its primary memory)
   when(arvalid) { arvalid := !(lowLevelMem.ARVALID && lowLevelMem.ARREADY) }
-  when(rready) { rready := !(lowLevelMem.RREADY && lowLevelMem.RVALID && lowLevelMem.RLAST) }
+  when(rready) { rready := !(lowLevelMem.RREADY && lowLevelMem.RVALID && lowLevelMem.RLAST && (lowLevelMem.RID === 0.U)) }
 
-  when(!writeToCache) { writeToCache := (lowLevelMem.RREADY && lowLevelMem.RVALID && lowLevelMem.RLAST) }
+  when(!writeToCache) { writeToCache := (lowLevelMem.RREADY && lowLevelMem.RVALID && lowLevelMem.RLAST && (lowLevelMem.RID === 0.U)) }
   when(writeToCache) { writeToCache := false.B }
 
   // getting a request check through cache
