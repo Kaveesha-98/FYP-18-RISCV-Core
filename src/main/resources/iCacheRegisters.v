@@ -20,7 +20,7 @@ module iCacheRegisters #(
   reg validBits [cache_depth-1:0];
 
   assign instruction = cache[address[line_wdith+offset_width+2-1:offset_width+2]][address[offset_width+2-1:2]];
-  assign tag = tag[address[line_wdith+offset_width+2-1:offset_width+2]];
+  assign tag = tags[address[line_wdith+offset_width+2-1:offset_width+2]];
   assign tag_valid = validBits[address[line_wdith+offset_width+2-1:offset_width+2]]
 
   genvar i, j;

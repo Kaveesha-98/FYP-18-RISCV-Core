@@ -27,7 +27,7 @@ class iCacheRegisters extends BlackBox(
     val tag = Output(UInt(iCacheTagWidth.W))//output [tag_width-1: 0] tag,
     val tag_valid = Output(Bool())//output valid,
     val write_line_index = Input(UInt(iCacheLineWidth.W))//input [line_width-1:0] write_line_index,
-    val write_block = Input(UInt(iCacheBlockSize.W))//input [32*block_size - 1:0] write_block,
+    val write_block = Input(UInt((32*iCacheBlockSize).W))//input [32*block_size - 1:0] write_block,
     val write_tag = Input(UInt(iCacheTagWidth.W))//input [tag_width-1, 0] write_tag,
     val write_in = Input(Bool())//input reset, write_in, clock
     val invalidate_all = Input(Bool())
