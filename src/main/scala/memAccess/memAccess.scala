@@ -80,8 +80,7 @@ class memAccess extends Module{
     val req = DecoupledIO(new Bundle{
       val address   = UInt(64.W)
       val writeData = UInt(64.W) // right justified as in rs2
-      val funct3    = UInt(3.W)
-      val isWrite   = Bool()
+      val instruction    = UInt(3.W)
       val robAddr   = UInt(robAddrWidth.W)
     })
     val resp = Flipped(DecoupledIO(new Bundle{
@@ -136,14 +135,12 @@ class memAccess extends Module{
   when( !reqBuffer.free && (reqBuffer.entryType === dram) ) {
     dCache.req.bits.address   := reqBuffer.address
     dCache.req.bits.writeData := reqBuffer.writeData
-    dCache.req.bits.funct3    := reqBuffer.instruction(14, 12)
-    dCache.req.bits.isWrite   := reqBuffer.instruction(5).asBool
+    dCache.req.bits.instruction := reqBuffer.instruction
     dCache.req.bits.robAddr   := reqBuffer.robAddr
   }.otherwise {
     dCache.req.bits.address    := fromPipeline.address
     dCache.req.bits.writeData  := fromPipeline.writeData
-    dCache.req.bits.funct3     := fromPipeline.instruction(14, 12)
-    dCache.req.bits.isWrite    := fromPipeline.instruction(5).asBool
+    dCache.req.bits.instruction := fromPipeline.instruction
     dCache.req.bits.robAddr    := fromPipeline.robAddr
   }
 
