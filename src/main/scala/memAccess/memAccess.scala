@@ -80,7 +80,7 @@ class memAccess extends Module{
     val req = DecoupledIO(new Bundle{
       val address   = UInt(64.W)
       val writeData = UInt(64.W) // right justified as in rs2
-      val instruction    = UInt(3.W)
+      val instruction    = UInt(32.W)
       val robAddr   = UInt(robAddrWidth.W)
     })
     val resp = Flipped(DecoupledIO(new Bundle{
