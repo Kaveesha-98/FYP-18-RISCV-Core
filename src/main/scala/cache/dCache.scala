@@ -5,6 +5,16 @@ package pipeline.memAccess.cache
   * like removing a dedicated register to keep track of state.
   */
 
+/**
+  * Current implementations:
+  * Handling read requests - Once read is on CurrentReq(0). The necessary 
+  * cacheline is looked up on the cache and results are returned on to 
+  * cacheLookUp. 
+  * When cachehit - The result is ready to be accepted by pipeline
+  * 
+  * When cachemiss - cache pipeline is stalled
+  */
+
 import chisel3._
 import chisel3.util._
 import chisel3.util.HasBlackBoxResource
@@ -42,124 +52,67 @@ class dCacheRegisters extends BlackBox(
 }
 
 class dCache extends Module {
-  /* val fromPipeline = IO(new Bundle{
-    val req = Flipped(DecoupledIO(new Bundle{
-      val address   = UInt(64.W)
-      val writeData = UInt(64.W) // right justified as in rs2
-      val funct3    = UInt(3.W)
-      val isWrite   = Bool()
-      val robAddr   = UInt(robAddrWidth.W)
-    }))
-    val resp = DecoupledIO(new Bundle{
-      // writes do not return a response
-      val byteAlignedData = UInt(64.W)
-      val address = UInt(64.W)
-      val funct3 = UInt(3.W)
-      val robAddr = UInt(robAddrWidth.W)
-    })
-  })
+  /* val pipelineMemAccess = IO(Flipped((new memAccess).dCache.cloneType))
+  val lowLevelAXI = IO(new AXI)
+  val cleanCaches = IO(new composableInterface)
+  val cachesCleaned = IO(new composableInterface)
 
-  val lowLevelMem = IO(new AXI)
-
-  val currentReq = RegInit(VecInit(Seq.fill(2)(RegInit((new Bundle{
-		val valid 	= Bool()
-    val address = UInt(64.W)
-    val writeData = UInt(64.W) // right justified as in rs2
-    val funct3    = UInt(3.W)
-    val isWrite   = Bool()
-    val robAddr   = UInt(robAddrWidth.W)
-	}).Lit(
-		_.valid	-> false.B,
-    _.address -> 0.U,
-    _.writeData -> 0.U, // right justified as in rs2
-    _.funct3 -> 0.U,
-    _.isWrite -> false.B,
-    _.robAddr -> 0.U
-	)))))
+  val servicing :: buffered :: Nil = Enum(2)
 
   val cache = Module(new dCacheRegisters)
   cache.io.clock := clock
   cache.io.reset := reset
 
-  cache.io.address := currentReq(0).address(31, 0)
+  val updateCache = RegInit(false.B)
+  val updatedCacheLine = Reg(UInt((64*dCacheBlockSize).W))
 
-  val cacheLookUp = RegInit((new Bundle{
-		val valid 	= Bool()
+  val updateCacheBlock = RegInit(new Bundle {
+    val valid = Bool()
+    val block = UInt((dCacheBlockSize*64).W)
+    val index = UInt(dCacheLineWidth.W)
+    val tag   = UInt(dCacheTagWidth.W)
+  }).Lit(
+    _.valid -> false.B,
+    _.blobk -> 0.U,
+    _.index -> 0.U,
+    _.tag   -> 0.U
+  )
+
+  cache.io.write_in := updateCacheBlock.valid
+  cache.io.write_block := updateCacheBlock.block
+  cache.io.write_line_index := updateCacheBlock.index
+  cache.io.write_tag := updateCacheBlock.tag
+  // need a way to only write a specific double word
+
+  cache.io.store_data := 0.U
+  cache.io.store_commit := false.B
+  cache.io.store_address := 0.U
+
+  // cache requests are buffered in these registers
+  val cacheReqs = RegInit(VecInit(Seq.fill(2)(RegInit((new Bundle {
+    val valid = Bool()
     val address = UInt(64.W)
+    val writeData = UInt(64.W)
     val instruction = UInt(32.W)
-    val tag = UInt(iCacheTagWidth.W)
-    val tagValid = Bool()
-    val writeData = UInt(64.W) // right justified as in rs2
-    val funct3    = UInt(3.W)
-    val isWrite   = Bool()
-    val robAddr   = UInt(robAddrWidth.W)
-    val byteAlignedData = UInt(64.W)
-	}).Lit(
-		_.valid	-> false.B,
+    val robAddr = UInt(robAddrWidth.W)
+  }).Lit(
+    _.valid -> false.B,
     _.address -> 0.U,
-    _.writeData -> 0.U, // right justified as in rs2
-    _.funct3 -> 0.U,
-    _.isWrite -> false.B,
-    _.robAddr -> 0.U,
-    _.byteAlignedData -> 0.U
-	))
+    _.writeData -> 0.U,
+    _.instruction -> 0.U,
+    _.robAddr -> 0.U
+  )))))
 
-  val cacheHit = (cacheLookUp.tag === cacheLookUp.address(31, 31-iCacheTagWidth)) && cacheLookUp.tagValid
+  cache.io.address := cacheReqs(servicing).address 
 
-  val arvalid, rready, writeToCache = RegInit(false.B)
-
-  cache.io.write_in := writeToCache
-
-  when(!arvalid) { arvalid := cacheLookUp.valid && !cacheHit }
-  when(!rready) { rready := cacheLookUp.valid && !cacheHit }
-
-  lowLevelMem.ARADDR := Cat(cacheLookUp.address(31, 3+dCacheDoubleWordOffsetWidth), 0.U((3+dCacheDoubleWordOffsetWidth).W))
-  lowLevelMem.ARBURST := 1.U
-  lowLevelMem.ARCACHE := 2.U
-  lowLevelMem.ARID := 1.U
-  lowLevelMem.ARLEN := ((dCacheBlockSize*2) - 1).U
-  lowLevelMem.ARLOCK := 0.U
-  lowLevelMem.ARPROT := 0.U
-  lowLevelMem.ARQOS := 0.U
-  lowLevelMem.ARSIZE := 2.U
-  lowLevelMem.ARVALID := arvalid
-
-  val newDataBlock = Reg(UInt((64*dCacheBlockSize).W))
-
-  lowLevelMem.RREADY := rready
-
-  when(lowLevelMem.RVALID && lowLevelMem.RREADY && (lowLevelMem.RID === 1.U)) { newDataBlock := Cat(newDataBlock(32*((dCacheBlockSize*2)-1) -1, 0), lowLevelMem.RDATA) }
-
-  cache.io.write_block := newDataBlock
-  cache.io.write_in := writeToCache
-
-  // finish getting new instruction block from low level cache or primary memory(for now its primary memory)
-  when(arvalid) { arvalid := !(lowLevelMem.ARVALID && lowLevelMem.ARREADY) }
-  when(rready) { rready := !(lowLevelMem.RREADY && lowLevelMem.RVALID && lowLevelMem.RLAST && (lowLevelMem.RID === 0.U)) }
-
-  when(!writeToCache) { writeToCache := (cacheLookUp.valid && cacheHit && cacheLookUp.isWrite) || (lowLevelMem.RREADY && lowLevelMem.RVALID && lowLevelMem.RLAST && (lowLevelMem.RID === 0.U)) }
-  when(writeToCache) { writeToCache := false.B }
-
-  val commitStore = RegInit(false.B)
-  when(!commitStore) { commitStore := cacheLookUp.valid && cacheHit && cacheLookUp.isWrite }
-  .otherwise { commitStore := false.B } // one cycle should be enough
-
-  cache.io.store_commit := commitStore
-  cache.io.store_address := cacheLookUp.address
-
-  val storeMask = (VecInit.tabulate(4)(i => i match {
-    case 0 => 1.U
-    case 1 => 3.U
-    case 3 => 7.U
-    case 4 => 15.U
-  })(cacheLookUp.funct3(1, 0))) << cacheLookUp.address(2,0)
-
-  val storeDataAligned = cacheLookUp.writeData << (VecInit.tabulate(8)(i => (8*i).U)(cacheLookUp.address(2,0)))
-
-  val doubleWordAfterStore = Cat(Seq.tabulate(8)(i => (Mux(storeMask(i).asBool, storeDataAligned(8*(i+1) - 1, 8*i), cacheLookUp.byteAlignedData(8*(i+1) - 1, 8*i)))).reverse)
-
-  val doubleWordAfterStoreReg = Reg(UInt(64.W))
-  when(!commitStore && cacheLookUp.valid && cacheHit && cacheLookUp.isWrite) { doubleWordAfterStoreReg := doubleWordAfterStore }
-  */
+  // response from cache lookup stored here
+  val lookupResponse = RegInit((new Bundle {
+    val valid = Bool()
+    val address = UInt(64.W)
+    val writeData = UInt(64.W)
+    val instruction = UInt(32.W)
+    val robAddr = UInt(robAddrWidth.W)
+    val byteAlignedData = UInt((dCacheBlockSize*64).W)
+  })) */
 }
 
