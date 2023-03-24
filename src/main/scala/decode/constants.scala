@@ -23,4 +23,14 @@ object constants {
   val utype = "b100"
   val jtype = "b101"
   val ntype = "b110"
+
+  val dataWidth = 64
+  val insAddrWidth = 32
+  val regCount = 32
+  val rs1Width = 5
+  val rs2Width = 5
+  val rdWidth = 5
+  val opcodeWidth = 7
+
+  val initialPC = "h7ffffffc"       // h80000000 - 4
 }
