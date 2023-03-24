@@ -19,10 +19,10 @@ object coreConfiguration {
     val ramHighAddress = 0x1FFFFFFF
     val iCacheOffsetWidth = 2
     val iCacheLineWidth = 6
-    val iCacheTagWidth = 31 - iCacheLineWidth - iCacheOffsetWidth - 2
+    val iCacheTagWidth = 32 - iCacheLineWidth - iCacheOffsetWidth - 2
     val iCacheBlockSize = (1 << iCacheOffsetWidth) // number of instructions
     val dCacheDoubleWordOffsetWidth = 3
     val dCacheLineWidth = 6
-    val dCacheTagWidth = 31 - dCacheLineWidth - dCacheDoubleWordOffsetWidth - 3
+    val dCacheTagWidth = 32 - dCacheLineWidth - dCacheDoubleWordOffsetWidth - 3
     val dCacheBlockSize = (1 << dCacheDoubleWordOffsetWidth)
 }
