@@ -9,14 +9,32 @@ import pipeline.decode.constants._
 import pipeline.configuration.coreConfiguration._
 import pipeline.ports._
 
+class Src extends Bundle {
+  val fromRob = Bool()                            // ROB address of the source
+  val data = UInt(dataWidth.W)                    // Data of the source
+  val robAddr = UInt(robAddrWidth.W)              // Where the source data can be found : (true -> ROB, false -> register file)
+}
+
+class Validity extends Bundle {                   // Valid signals for Data in the register and ROB Address
+  val rs1Data      = Bool()
+  val rs1RobAddr   = Bool()
+  val rs2Data      = Bool()
+  val rs2RobAddr   = Bool()
+  val writeData    = Bool()
+  val writeRobAddr = Bool()
+}
+
+class Branch extends Bundle {                     // Details for branching
+  val isBranch      = Output(Bool())
+  val branchTaken   = Output(Bool())
+  val pc            = Output(UInt(32.W))
+  val pcAfterBrnach = Output(UInt(32.W))
+}
+
 // once the rules is finalized, this port will be added to ports.scala
 class pushInsToPipeline extends composableInterface {
   // IMPORTANT - value of x0 should never be issued with *.fromRob asserted
-  val src1 = Output(new Bundle {                  // {jal, jalr, auipc - pc}, {loads, stores, rops*, iops*, conditionalBranches - rs1}
-    val fromRob = Bool()
-    val data    = UInt(dataWidth.W)
-    val robAddr = UInt(robAddrWidth.W)
-  })
+  val src1        = Output(new Src)               // {jal, jalr, auipc - pc}, {loads, stores, rops*, iops*, conditionalBranches - rs1}
   val src2        = Output(src1.cloneType)        // {jalr, jal - 4.U}, {loads, stores, iops*, auipc - immediate}, {rops* - rs2}
   val writeData   = Output(src1.cloneType)
   val instruction = Output(UInt(insAddrWidth.W))
@@ -72,38 +90,32 @@ class decode extends Module {
 
   // Initializing a buffer for storing the output values to the exec unit
   val decodeIssueBuffer = RegInit(new Bundle{
-    val instruction  = UInt(insAddrWidth.W)
-    val pc           = UInt(dataWidth.W)
-    val insType      = UInt(3.W)                           // RISC-V instruction type: {R-type, I-type, S-type, B-type, U-type, J-type, N-type(for fence)}
-    val rs1Data      = UInt(dataWidth.W)                   // Data of register source 1
-    val rs1RobAddr   = UInt(robAddrWidth.W)                // ROB address of register source 1
-    val rs1FromRob   = Bool()                              // Where the source 1 data can be found : (true -> ROB, false -> register file)
-    val rs2Data      = UInt(dataWidth.W)                   // Data of register source 2 or immediates
-    val rs2RobAddr   = UInt(robAddrWidth.W)                // ROB address of register source 2
-    val rs2FromRob   = Bool()                              // Where the source 2 data can be found : (true -> ROB, false -> register file)
-    val writeData    = UInt(dataWidth.W)                   // Data of register source 2 for store instructions
-    val writeRobAddr = UInt(robAddrWidth.W)                // ROB address of register source 2 for store instrucitons
-    val writeFromRob = Bool()                              // Where the source 2 data for the store instrucitons can be found : (true -> ROB, false -> register file)
+    val instruction = UInt(insAddrWidth.W)
+    val pc          = UInt(dataWidth.W)
+    val insType     = UInt(3.W)                           // RISC-V instruction type: {R-type, I-type, S-type, B-type, U-type, J-type, N-type(for fence)}
+    val rs1         = new Src                             // Register source 1
+    val rs2         = rs1.cloneType                       // Register source 2
+    val write       = rs1.cloneType                       // Register source 2 for store instructions
   }.Lit(
-    _.instruction  -> 0.U,
-    _.pc           -> 0.U,
-    _.insType      -> 0.U,
-    _.rs1Data      -> 0.U,
-    _.rs1RobAddr   -> 0.U,
-    _.rs1FromRob   -> false.B,
-    _.rs2Data      -> 0.U,
-    _.rs2RobAddr   -> 0.U,
-    _.rs2FromRob   -> false.B,
-    _.writeData    -> 0.U,
-    _.writeRobAddr -> 0.U,
-    _.writeFromRob -> false.B,
+    _.instruction   -> 0.U,
+    _.pc            -> 0.U,
+    _.insType       -> 0.U,
+    _.rs1.data      -> 0.U,
+    _.rs1.robAddr   -> 0.U,
+    _.rs1.fromRob   -> false.B,
+    _.rs2.data      -> 0.U,
+    _.rs2.robAddr   -> 0.U,
+    _.rs2.fromRob   -> false.B,
+    _.write.data    -> 0.U,
+    _.write.robAddr -> 0.U,
+    _.write.fromRob -> false.B,
   ))
 
   // Initializing some intermediate wires
-  val opcode = WireDefault(0.U(opcodeWidth.W))
-  val rs1    = WireDefault(0.U(rs1Width.W))
-  val rs2    = WireDefault(0.U(rs2Width.W))
-  val rd     = WireDefault(0.U(rdWidth.W))
+  val opcode  = WireDefault(0.U(opcodeWidth.W))
+  val rs1Addr = WireDefault(0.U(rs1Width.W))
+  val rs2Addr = WireDefault(0.U(rs2Width.W))
+  val rdAddr  = WireDefault(0.U(rdWidth.W))
 
   val validOutFetchBuf = WireDefault(false.B)         // Valid signal of fetch buffer
   val readyOutFetchBuf = WireDefault(false.B)         // Ready signal of fetch buffer
@@ -113,34 +125,48 @@ class decode extends Module {
 
   val insType        = WireDefault(0.U(3.W))
   val immediate      = WireDefault(0.U(dataWidth.W))
-  val rs1Data        = WireDefault(0.U(dataWidth.W))
-  val rs1RobAddr     = WireDefault(0.U(robAddrWidth.W))
-  val rs1FromRob     = WireDefault(false.B)
-  val rs2Data        = WireDefault(0.U(dataWidth.W))
-  val rs2RobAddr     = WireDefault(0.U(robAddrWidth.W))
-  val rs2FromRob     = WireDefault(false.B)
-  val writeData      = WireDefault(0.U(dataWidth.W))
-  val writeRobAddr   = WireDefault(0.U(robAddrWidth.W))
-  val writeFromRob   = WireDefault(false.B)
-  val rdValid        = WireDefault(true.B)                  // Destination register valid signal
-  val rs1DataValid   = WireDefault(true.B)                  // rs1 register data valid signal
-  val rs1RobValid    = WireDefault(false.B)                 // rs1 register rob address valid signal
-  val rs2DataValid   = WireDefault(true.B)                  // rs2 register valid signal
-  val rs2RobValid    = WireDefault(false.B)                 // rs2 register rob address valid signal
-  val writeDataValid = WireDefault(true.B)                  // rs2 register valid signal for store instructions
-  val writeRobValid  = WireDefault(false.B)                 // rs2 register rob address valid signal for store instructions
+  
+  val rs1 = WireDefault(new Src().Lit(
+    _.data    -> 0.U,
+    _.robAddr -> 0.U,
+    _.fromRob -> false.B
+  ))
+  val rs2 = WireDefault(rs1.cloneType.Lit(
+    _.data    -> 0.U,
+    _.robAddr -> 0.U,
+    _.fromRob -> false.B
+  ))
+  
+  val write = WireDefault(rs1.cloneType.Lit(
+    _.data    -> 0.U,
+    _.robAddr -> 0.U,
+    _.fromRob -> false.B
+  ))
+  
+  val valid = WireDefault(new Validity().Lit(
+    _.rs1Data      -> true.B,
+    _.rs1RobAddr   -> false.B,
+    _.rs2Data      -> true.B,
+    _.rs2RobAddr   -> false.B,
+    _.writeData    -> true.B,
+    _.writeRobAddr -> false.B
+  ))
+
   val stalled        = WireDefault(false.B)                 // Stall signal
 
   val ins = WireDefault(0.U(insAddrWidth.W))
   val pc  = WireDefault(0.U(dataWidth.W))
 
-  val isBranch   = WireDefault(false.B)               // Current instruction is a branch or not
   val expectedPC = WireDefault(0.U(dataWidth.W))      // Expected pc value from the decode unit to the fetch unit
 
+  val branch = WireDefault(new Branch().Lit(
+    _.isBranch      -> false.B,
+    _.branchTaken   -> false.B,
+    _.pc            -> 0.U,
+    _.pcAfterBrnach -> 0.U
+  ))
+
   val branchValid   = WireDefault(false.B)            // Branch result port signals are valid or not
-  val branchIsTaken = WireDefault(false.B)            // Branch is taken or not
-  val branchPC      = WireDefault(0.U(dataWidth.W))   // Address of the branch instruction
-  val branchTarget  = WireDefault(0.U(dataWidth.W))   // Next address of the instruction after the branch
 
   // Initializing states for the FSMs for fetch buffer and decode buffer
   val emptyState :: fullState :: Nil = Enum(2)        // States of FSM
@@ -156,50 +182,38 @@ class decode extends Module {
   ins := fetchIssueBuffer.instruction
   pc  := fetchIssueBuffer.pc
 
-  opcode := ins(6,0)
-  rs1    := ins(19,15)
-  rs2    := ins(24,20)
-  rd     := ins(11,7)
+  opcode  := ins(6,0)
+  rs1Addr := ins(19,15)
+  rs2Addr := ins(24,20)
+  rdAddr  := ins(11,7)
 
   // Storing values to the decode buffer
   when(validOutFetchBuf && readyOutDecodeBuf) {             // data from the fetch buffer is valid and decode buffer is ready
-    decodeIssueBuffer.instruction  := ins
-    decodeIssueBuffer.pc           := pc
-    decodeIssueBuffer.insType      := insType
-    decodeIssueBuffer.rs1Data      := rs1Data
-    decodeIssueBuffer.rs1RobAddr   := rs1RobAddr
-    decodeIssueBuffer.rs1FromRob   := rs1FromRob
-    decodeIssueBuffer.rs2Data      := rs2Data
-    decodeIssueBuffer.rs2RobAddr   := rs2RobAddr
-    decodeIssueBuffer.rs2FromRob   := rs2FromRob
-    decodeIssueBuffer.writeData    := writeData
-    decodeIssueBuffer.writeRobAddr := writeRobAddr
-    decodeIssueBuffer.writeFromRob := writeFromRob
+    decodeIssueBuffer.instruction := ins
+    decodeIssueBuffer.pc          := pc
+    decodeIssueBuffer.insType     := insType
+    decodeIssueBuffer.rs1         := rs1
+    decodeIssueBuffer.rs2         := rs2
+    decodeIssueBuffer.write       := write
   }
 
   // Assigning outputs
-  toExec.ready             := validOutDecodeBuf
-  toExec.instruction       := decodeIssueBuffer.instruction
-  toExec.pc                := decodeIssueBuffer.pc
-  toExec.src1.data         := decodeIssueBuffer.rs1Data
-  toExec.src1.robAddr      := decodeIssueBuffer.rs1RobAddr
-  toExec.src1.fromRob      := decodeIssueBuffer.rs1FromRob
-  toExec.src2.data         := decodeIssueBuffer.rs2Data
-  toExec.src2.robAddr      := decodeIssueBuffer.rs2RobAddr
-  toExec.src2.fromRob      := decodeIssueBuffer.rs2FromRob
-  toExec.writeData.data    := decodeIssueBuffer.writeData
-  toExec.writeData.robAddr := decodeIssueBuffer.writeRobAddr
-  toExec.writeData.fromRob := decodeIssueBuffer.writeFromRob
+  toExec.ready       := validOutDecodeBuf
+  toExec.instruction := decodeIssueBuffer.instruction
+  toExec.pc          := decodeIssueBuffer.pc
+  toExec.src1        := decodeIssueBuffer.rs1
+  toExec.src2        := decodeIssueBuffer.rs2
+  toExec.writeData   := decodeIssueBuffer.write
 
   fromFetch.ready          := readyOutFetchBuf
   fromFetch.expected.pc    := expectedPC
   fromFetch.expected.valid := readyOutFetchBuf
 
-  branchRes.ready         := true.B
-  branchRes.isBranch      := isBranch
-  branchRes.branchTaken   := branchIsTaken
-  branchRes.pc            := branchPC
-  branchRes.pcAfterBrnach := branchTarget
+  branchRes.ready         := true.B                   // branchValid
+  branchRes.isBranch      := branch.isBranch
+  branchRes.branchTaken   := branch.branchTaken
+  branchRes.pc            := branch.pc
+  branchRes.pcAfterBrnach := branch.pcAfterBrnach
 
   writeBackResult.ready := true.B
 
@@ -279,7 +293,7 @@ class decode extends Module {
   //--------------------------------------------------------------------------------------------------------------------//
 
   // Branch detection
-  isBranch := opcode === jump.U || opcode === jumpr.U || opcode === cjump.U
+  branch.isBranch := opcode === jump.U || opcode === jumpr.U || opcode === cjump.U
 
   // Register File activities
   //--------------------------------------------------------------------------------------------------------------------//
@@ -312,67 +326,67 @@ class decode extends Module {
 
   // Setting rs1 properties
   when(opcode === auipc.U || opcode === jump.U || opcode === jumpr.U) {
-    rs1Data := pc
-    rs1DataValid := true.B
-    rs1RobAddr := 0.U
-    rs1RobValid := false.B
+    rs1.data         := pc
+    valid.rs1Data    := true.B
+    rs1.robAddr      := 0.U
+    valid.rs1RobAddr := false.B
   }
   when(opcode === load.U || opcode === store.U || opcode === rops.U || opcode === iops.U || opcode === rops32.U || opcode === iops32.U || opcode === cjump.U) {
-    rs1Data := registerFile(rs1)
-    when(validBit(rs1) === 1.U) {
-      rs1DataValid := true.B
+    rs1.data := registerFile(rs1Addr)
+    when(validBit(rs1Addr) === 1.U) {
+      valid.rs1Data := true.B
     } otherwise {
-      rs1DataValid := false.B
+      valid.rs1Data := false.B
     }
-    rs1RobAddr := robFile(rs1)
-    when(robValidBit(rs1) === 1.U) {
-      rs1RobValid := true.B
+    rs1.robAddr := robFile(rs1Addr)
+    when(robValidBit(rs1Addr) === 1.U) {
+      valid.rs1RobAddr := true.B
     } otherwise {
-      rs1RobValid := false.B
+      valid.rs1RobAddr := false.B
     }
   }
 
   // Setting rs2 properties
   when(opcode === jumpr.U || opcode === jump.U) {
-    rs2Data := 4.U
-    rs2DataValid := true.B
-    rs2RobAddr := 0.U
-    rs2RobValid := false.B
+    rs2.data         := 4.U
+    valid.rs2Data    := true.B
+    rs2.robAddr      := 0.U
+    valid.rs2RobAddr := false.B
   }
   when(opcode === load.U || opcode === store.U || opcode === iops.U || opcode === iops32.U || opcode === auipc.U) {
-    rs2Data := immediate
-    rs2DataValid := true.B
-    rs2RobAddr := 0.U
-    rs2RobValid := false.B
+    rs2.data := immediate
+    valid.rs2Data    := true.B
+    rs2.robAddr      := 0.U
+    valid.rs2RobAddr := false.B
   }
   when(opcode === cjump.U || opcode === rops.U || opcode === rops32.U) {
-    rs2Data := registerFile(rs2)
-    when(validBit(rs2) === 1.U) {
-      rs2DataValid := true.B
+    rs2.data := registerFile(rs2Addr)
+    when(validBit(rs2Addr) === 1.U) {
+      valid.rs2Data := true.B
     } otherwise {
-      rs2DataValid := false.B
+      valid.rs2Data := false.B
     }
-    rs2RobAddr := robFile(rs2)
-    when(robValidBit(rs2) === 1.U) {
-      rs2RobValid := true.B
+    rs2.robAddr := robFile(rs2Addr)
+    when(robValidBit(rs2Addr) === 1.U) {
+      valid.rs2RobAddr := true.B
     } otherwise {
-      rs2RobValid := false.B
+      valid.rs2RobAddr := false.B
     }
   }
 
   // Setting rs2 properties for store instructions
   when(opcode === store.U) {
-    writeData := registerFile(rs2)
-    when(validBit(rs2) === 1.U) {
-      writeDataValid := true.B
+    write.data := registerFile(rs2Addr)
+    when(validBit(rs2Addr) === 1.U) {
+      valid.writeData := true.B
     } otherwise {
-      writeDataValid := false.B
+      valid.writeData := false.B
     }
-    writeRobAddr := robFile(rs2)
-    when(robValidBit(rs2) === 1.U) {
-      writeRobValid := true.B
+    write.robAddr := robFile(rs2Addr)
+    when(robValidBit(rs2Addr) === 1.U) {
+      valid.writeRobAddr := true.B
     } otherwise {
-      writeRobValid := false.B
+      valid.writeRobAddr := false.B
     }
   }
 
@@ -388,47 +402,47 @@ class decode extends Module {
   // Rob File writing
   when(decodeIssueBuffer.insType === rtype.U || insType === utype.U || insType === itype.U || insType === jtype.U) {
     when(readyIn) {
-      robFile(decodeIssueBuffer.instruction(rd)) := toExec.robAddr
-      robValidBit(decodeIssueBuffer.instruction(rd)) := 1.U
+      robFile(decodeIssueBuffer.instruction(rdAddr))     := toExec.robAddr
+      robValidBit(decodeIssueBuffer.instruction(rdAddr)) := 1.U
     }
   }
 
   // Checking rs1 validity
   when(insType === rtype.U || insType === itype.U || insType === stype.U || insType === btype.U) {
-    when(validBit(rs1) === 0.U) {
-      rs1DataValid := false.B
+    when(validBit(rs1Addr) === 0.U) {
+      valid.rs1Data := false.B
     }
-    when(robValidBit(rs1) === 1.U) {
-      rs1RobValid := true.B
+    when(robValidBit(rs1Addr) === 1.U) {
+      valid.rs1RobAddr := true.B
     }
   }
   // Checking rs2 validity
   when(insType === rtype.U || insType === stype.U || insType === btype.U) {
-    when(validBit(rs2) === 0.U) {
-      rs2DataValid := false.B
+    when(validBit(rs2Addr) === 0.U) {
+      valid.rs2Data := false.B
     }
-    when(robValidBit(rs2) === 1.U) {
-      rs2RobValid := true.B
+    when(robValidBit(rs2Addr) === 1.U) {
+      valid.rs2RobAddr := true.B
     }
   }
   // Checking rd validity and changing the valid bit for rd
   when(insType === rtype.U || insType === utype.U || insType === itype.U || insType === jtype.U) {
-    when(validBit(rd) === 0.U) {
-      rdValid := false.B
+    when(validBit(rdAddr) === 0.U) {
+//      rdValid := false.B
     }
       .otherwise {
-        when(validOutFetchBuf && readyIn && rd =/= 0.U) {
-          validBit(rd) := 0.U
+        when(validOutFetchBuf && readyIn && rdAddr =/= 0.U) {
+          validBit(rdAddr) := 0.U
         }
       }
   }
   //--------------------------------------------------------------------------------------------------------------------//
 
   when(stateRegFetchBuf === fullState) {
-    stalled      := !((rs1DataValid || rs1RobValid) && (rs2RobValid || rs2DataValid) && (writeDataValid || writeRobValid)) || (isBranch && !(rs1DataValid && rs2DataValid)) // stall signal for FSM
-    rs1FromRob   := !rs1DataValid && rs1RobValid
-    rs2FromRob   := !rs2DataValid && rs2RobValid
-    writeFromRob := !writeDataValid && writeRobValid
+    stalled       := !((valid.rs1Data || valid.rs1RobAddr) && (valid.rs2RobAddr || valid.rs2Data) && (valid.writeData || valid.writeRobAddr)) || (branch.isBranch && !(valid.rs1Data && valid.rs2Data)) // stall signal for FSM
+    rs1.fromRob   := !valid.rs1Data && valid.rs1RobAddr
+    rs2.fromRob   := !valid.rs2Data && valid.rs2RobAddr
+    write.fromRob := !valid.writeData && valid.writeRobAddr
   }
 
   // FSM for ready valid interface of fetch buffer
@@ -490,14 +504,14 @@ class decode extends Module {
     case (bitpat, result) => Mux(ins === bitpat, result, prev)
   }
 
-  when(isBranch && !stalled) {
+  when(branch.isBranch && !stalled) {
     val branchTaken = Seq(
-      rs1Data === rs2Data,
-      rs1Data =/= rs2Data,
-      rs1Data.asSInt < rs2Data.asSInt,
-      rs1Data.asSInt >= rs2Data.asSInt,
-      rs1Data < rs2Data,
-      rs1Data >= rs2Data
+      rs1.data === rs2.data,
+      rs1.data =/= rs2.data,
+      rs1.data.asSInt < rs2.data.asSInt,
+      rs1.data.asSInt >= rs2.data.asSInt,
+      rs1.data < rs2.data,
+      rs1.data >= rs2.data
     ).zip(Seq(0, 1, 4, 5, 6, 7).map(i => i.U === ins(14, 12))
     ).map(condAndMatch => condAndMatch._1 && condAndMatch._2).reduce(_ || _)
 
@@ -505,7 +519,7 @@ class decode extends Module {
 
     val target = Seq(
       BitPat("b?????????????????????????1101111") -> (pc + immediate), // jal
-      BitPat("b?????????????????????????1100111") -> (rs1Data + immediate), //jalr
+      BitPat("b?????????????????????????1100111") -> (rs1.data + immediate), //jalr
       BitPat("b?????????????????????????1100011") -> branchNextAddress, // branches
     ).foldRight(pc + 4.U)(getResult)
 
@@ -513,9 +527,9 @@ class decode extends Module {
     when(stateRegFetchBuf === fullState) {
       branchValid := true.B
     }
-    branchIsTaken := branchTaken
-    branchPC := pc
-    branchTarget := target
+    branch.branchTaken := branchTaken
+    branch.pc := pc
+    branch.pcAfterBrnach := target
   } otherwise {
     expectedPC := pc + 4.U
   }
