@@ -16,3 +16,4 @@ cpu-test/cpuTestbench
 !cpu-test/cpuTestbench.v
 !src/main/resources/*v
 *.f
+verilator-tests/dCache/dCache
