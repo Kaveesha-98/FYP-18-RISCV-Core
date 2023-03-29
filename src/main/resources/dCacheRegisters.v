@@ -33,7 +33,7 @@ module dCacheRegisters #(
       // partial writes only occur for blocks already in cache
       for (integer j = 0; j < block_size; j++) begin
         if (write_mask[j])begin
-          cache[write_line_index][j] <= write_block[63 + 64*j +: 64];
+          cache[write_line_index][j] <= write_block[64*j +: 64];
         end
       end
       validBits[write_line_index] <= 1'b1;
