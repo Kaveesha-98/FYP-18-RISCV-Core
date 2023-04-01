@@ -30,6 +30,7 @@ class commitInstruction extends composableInterface{
   val rd = Output(UInt(5.W))
   val value = Output(UInt(64.W))
   val opcode = Output(UInt(7.W))
+  val robAddr = Output(UInt(robAddrWidth.W))
 }
 
 class pullResultsToRob extends composableInterface {
@@ -98,6 +99,7 @@ class rob extends Module {
   commit.opcode := fifo.io.deq.bits(11,5)
   results.io.deq.ready := commit.fired
   fifo.io.deq.ready := commit.fired
+  commit.robAddr := results.commit_addr
 
   printf(p"${commit}\n")
 

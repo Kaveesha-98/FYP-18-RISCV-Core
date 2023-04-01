@@ -54,8 +54,9 @@ class randomAccessFifo[T <: Data ]( gen: T, depth: Int) extends Fifo(gen:
   val fullReg = RegInit(false.B)
 
   val addr = IO(Output(UInt(log2Ceil(depth).W)))
+  val commit_addr = IO(Output(UInt(log2Ceil(depth).W)))
   addr := writePtr
-
+  commit_addr := readPtr
   //forward ports
   val forward1 = IO(new forwardPort)
   val forward2 = IO(new forwardPort)
