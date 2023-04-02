@@ -24,3 +24,7 @@ make -f VdCache.mk
 cd ..
 
 g++ -I /usr/share/verilator/include -I obj_dir /usr/share/verilator/include/verilated.cpp /usr/share/verilator/include/verilated_vcd_c.cpp dCachetest.cpp obj_dir/VdCache__ALL.a -o dCache
+
+./dCache
+
+gtkwave dCache_trace.vcd 

@@ -138,7 +138,7 @@ class dCache extends Module {
     val writeData = UInt(64.W)
     val instruction = UInt(32.W)
     val robAddr = UInt(robAddrWidth.W)
-    val byteAlignedData = UInt((dCacheBlockSize*64).W)
+    val byteAlignedData = UInt(64.W)
     val tag = UInt(dCacheTagWidth.W)
     val tagValid = Bool()
   }).Lit(
@@ -205,7 +205,7 @@ class dCache extends Module {
 
   val atomicComplete = RegInit(false.B)
 
-  val cacheHit = lookupResponse.tagValid && (lookupResponse.tag === lookupResponse.address(31, 31 - dCacheTagWidth))
+  val cacheHit = lookupResponse.tagValid && (lookupResponse.tag === (lookupResponse.address >> (32 - dCacheTagWidth)))
   pipelineMemAccess.req.ready := !cacheReqs(buffered).valid
 
   def isStoreConditional(instruction: UInt) = 
@@ -272,13 +272,25 @@ class dCache extends Module {
       cacheReqs(servicing).instruction  := pipelineMemAccess.req.bits.instruction
       cacheReqs(servicing).robAddr      := pipelineMemAccess.req.bits.robAddr
     }
+  }.elsewhen(updateCacheBlock.valid && (updateCacheBlock.mask === "hff".U)) {
+    cacheReqs(servicing).valid        := true.B
+    cacheReqs(servicing).address      := lookupResponse.address
+    cacheReqs(servicing).writeData    := lookupResponse.writeData
+    cacheReqs(servicing).instruction  := lookupResponse.instruction
+    cacheReqs(servicing).robAddr      := lookupResponse.robAddr
+  }.elsewhen(!cacheReqs(servicing).valid) {
+    cacheReqs(servicing).valid        := (pipelineMemAccess.req.ready && pipelineMemAccess.req.valid)
+    cacheReqs(servicing).address      := pipelineMemAccess.req.bits.address
+    cacheReqs(servicing).writeData    := pipelineMemAccess.req.bits.writeData
+    cacheReqs(servicing).instruction  := pipelineMemAccess.req.bits.instruction
+    cacheReqs(servicing).robAddr      := pipelineMemAccess.req.bits.robAddr
   }
 
   // filling cacheReqs(buffered)
   when(!responseStalled && !cacheReqs(waiting).valid) {
     // servicing the buffered request
     cacheReqs(buffered).valid := false.B
-  }.elsewhen(responseStalled && cacheReqs(servicing).valid) {
+  }.elsewhen(responseStalled && cacheReqs(servicing).valid && !cacheReqs(buffered).valid) {
     // new request has to be buffered
     cacheReqs(buffered).valid        := (pipelineMemAccess.req.ready && pipelineMemAccess.req.valid)
     cacheReqs(buffered).address      := pipelineMemAccess.req.bits.address
@@ -288,7 +300,7 @@ class dCache extends Module {
   }
 
   // filling cacheReqs(waiting)
-  when(lookupResponse.valid && !cacheHit && updateCacheBlock.valid) {
+  when(lookupResponse.valid && updateCacheBlock.valid && (updateCacheBlock.mask === "hff".U)) {
     // caches updated and the request is being reloaded to reservice
     cacheReqs(waiting) := cacheReqs(servicing)
   }.elsewhen(!responseStalled) {
@@ -307,28 +319,32 @@ class dCache extends Module {
     lookupResponse.byteAlignedData := cache.io.byte_aligned_data
     lookupResponse.tag := cache.io.tag
     lookupResponse.tagValid := cache.io.tag_valid
+  }.elsewhen(updateCacheBlock.valid) {
+    lookupResponse.valid := false.B
   }
 
+  val blockFetched = RegInit(false.B)
   // carrying out mem reads for cachemisses
   // sending read request
-  arvalid := Mux(arvalid, !lowLevelAXI.ARREADY, (lookupResponse.valid && !cacheHit))
+  arvalid := Mux(arvalid, !lowLevelAXI.ARREADY, (lookupResponse.valid && !cacheHit && !rready && !blockFetched && !updateCacheBlock.valid))
   // getting the data
   rready := Mux(rready, !(lowLevelAXI.RVALID && lowLevelAXI.RLAST), (lowLevelAXI.ARVALID && lowLevelAXI.ARREADY))
-  val blockFetched = RegInit(false.B)
+  
   blockFetched := Mux(blockFetched, updateCacheBlock.valid, (lowLevelAXI.RREADY && lowLevelAXI.RVALID && lowLevelAXI.RLAST))
 
   // organizing the fetched data
-  when(lowLevelAXI.RVALID && lowLevelAXI.RREADY) { newCacheBlock := Cat(newCacheBlock(64*dCacheBlockSize-1, 32), lowLevelAXI.RDATA) }
+  when(lowLevelAXI.RVALID && lowLevelAXI.RREADY) { newCacheBlock := Cat(newCacheBlock(64*dCacheBlockSize-33, 0), lowLevelAXI.RDATA) }
 
   // commiting writes(and atmoics) to system memory
   val writeInProgress = RegInit(false.B)
   // writes are initiated only for stores(both normal and conditional) and atmoics
   val initiateWrite = (lookupResponse.valid && cacheHit && (lookupResponse.instruction(6, 2)=/=0.U && lookupResponse.instruction(31, 27)=/=2.U)) && !atomicComplete && !writeInProgress
-  awvalid := Mux(awvalid, !lowLevelAXI.AWREADY, initiateWrite && !writeInProgress)
-  wvalid := Mux(wvalid, !(lowLevelAXI.WREADY && lowLevelAXI.WLAST), initiateWrite && !writeInProgress)
+  awvalid := Mux(awvalid, !lowLevelAXI.AWREADY, initiateWrite && !writeInProgress && !updateCacheBlock.valid)
+  bready := Mux(bready, !lowLevelAXI.BVALID, initiateWrite && !writeInProgress && !updateCacheBlock.valid)
+  wvalid := Mux(wvalid, !(lowLevelAXI.WREADY && lowLevelAXI.WLAST), initiateWrite && !writeInProgress && !updateCacheBlock.valid)
   when(initiateWrite && writeInProgress) { wlast := lookupResponse.instruction(13, 12) =/= 3.U }
   .elsewhen(lowLevelAXI.WREADY && lowLevelAXI.WVALID) { wlast := !wlast }
-  writeInProgress := Mux(writeInProgress, !(awvalid || wvalid || bready), initiateWrite)
+  writeInProgress := Mux(writeInProgress, (awvalid || wvalid || bready), initiateWrite)
 
   val modifiedData = {
     val atmoicW = Cat(Seq.tabulate(2)(i => {
@@ -369,22 +385,23 @@ class dCache extends Module {
     val rs2Align = lookupResponse.writeData << VecInit(Seq.tabulate(8)(_*8).map{_.U})(lookupResponse.address(2, 0))
     val postStore = Cat(Seq.tabulate(8)(i => Mux(storeMask(i).asBool, rs2Align(7+8*i, 8*i), lookupResponse.byteAlignedData(7+8*i, 8*i))).reverse)
 
-    Mux(lookupResponse.instruction(6,2) === "b0100".U, postStore, Mux(lookupResponse.instruction(12).asBool, atomicD, atmoicW))
+    Mux(lookupResponse.instruction(6,2) === "b01000".U, postStore, Mux(lookupResponse.instruction(12).asBool, atomicD, atmoicW))
   }
+  val writeOffset = (lookupResponse.address >> 3)(2, 0)
 
   // updating cache after handling cache miss and for stores and atomics
   when(lookupResponse.valid && !cacheHit && blockFetched) {
     updateCacheBlock.valid := true.B
     updateCacheBlock.block := newCacheBlock
-    updateCacheBlock.index := lookupResponse.address(31 - dCacheTagWidth-1, 3+dCacheDoubleWordOffsetWidth)
-    updateCacheBlock.tag   := lookupResponse.address(31 ,31 - dCacheTagWidth)
+    updateCacheBlock.index := lookupResponse.address >> (3+dCacheDoubleWordOffsetWidth)
+    updateCacheBlock.tag   := lookupResponse.address >> (32 - dCacheTagWidth)
     updateCacheBlock.mask := ((1 << dCacheBlockSize)-1).U
   }.elsewhen(lookupResponse.valid && cacheHit && writeInProgress && !(awvalid || wvalid || bready) && !atomicComplete) {
     updateCacheBlock.valid := true.B
-    updateCacheBlock.block := modifiedData
-    updateCacheBlock.index := lookupResponse.address(31 - dCacheTagWidth-1, 3+dCacheDoubleWordOffsetWidth)
-    updateCacheBlock.tag   := lookupResponse.address(31 ,31 - dCacheTagWidth)
-    updateCacheBlock.mask := Cat(Seq.tabulate(1<<dCacheDoubleWordOffsetWidth)(_.U === lookupResponse.address(3+dCacheDoubleWordOffsetWidth,3)).reverse)
+    updateCacheBlock.block := Cat(Seq.tabulate(1<<dCacheDoubleWordOffsetWidth)(i => Mux(i.U === writeOffset, modifiedData, 0.U(64.W))).reverse)
+    updateCacheBlock.index := lookupResponse.address >> (3+dCacheDoubleWordOffsetWidth)
+    updateCacheBlock.tag   := lookupResponse.address >> (32 - dCacheTagWidth)
+    updateCacheBlock.mask := Cat(Seq.tabulate(1<<dCacheDoubleWordOffsetWidth)(_.U === writeOffset).reverse)
   }.otherwise {
     updateCacheBlock.valid := false.B
   }
