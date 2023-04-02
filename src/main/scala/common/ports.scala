@@ -12,6 +12,7 @@ import chisel3._
 import chisel3.util._
 import chisel3.experimental.BundleLiterals._
 import chisel3.experimental.IO
+import pipeline.configuration.coreConfiguration._
 
 /**
   * Contains the class definitions of ports connecting the modules of
@@ -129,6 +130,233 @@ class branchResToFetch extends composableInterface {
   val pcAfterBrnach = Input(UInt(32.W)) // pc of the next instruction after branch
 }
 
+/*******************************************************************/
+/**
+  * Rule - retire_instruction
+  * retireInsFromRob - Retires instruction, fired from Rob to Decode
+  * pullInsFromRob - Pulls instruction along with its result to decode from Rob
+  *   to retire instruction
+  * 
+  * If an exceptionOccured, then exception handling begins after that.
+  * 
+  * If an interrupt was in the RoB at this point, the interrput is given
+  * prority over the exception (mcause will represent interrupt)
+  */
+
+/**
+  * Rule - retire_instruction
+  * 
+  * decode unit port
+  *   for each instruction issued on to pipeline, this rule will fire
+  *   robAddr is used to solve WAW dependencies
+  */  
+class pullCommitFrmRob extends composableInterface {
+  val robAddr       = Input(UInt(robAddrWidth.W))
+  val rdAddr        = Input(UInt(5.W))
+  val writeBackData = Input(UInt(64.W)) // mtval when exceptionOccured
+  /* Additional wires when exception handling is added
+  val execptionOccured  = Input(Bool())
+  val mcause            = Input(UInt(64.W))
+  val mepc              = Input(UInt(64.W)) */
+} 
+
+/**
+  * Rule - retire instruction
+  *
+  * rob port
+  * mcause will be defined by exec {4, 5, 6, 7, 13, 15}
+  */
+class commitInstruction extends composableInterface {
+  val robAddr       = Output(UInt(robAddrWidth.W))
+  val rdAddr        = Output(UInt(5.W))
+  val writeBackData = Output(UInt(64.W)) // mtval when exceptionOccured
+  /* Additional wires when exception handling is added
+  val execptionOccured  = Output(Bool())
+  val mcause            = Output(UInt(64.W))
+  val mepc              = Output(UInt(64.W)) */
+} 
+/*******************************************************************/
+
+/*******************************************************************/
+/**
+  * Rule - issue_instruction_to_pipeline
+  * 
+  * Pushes instruction to pipeline, instruction is allocated in rob
+  *
+  * Once interrupt handling is introduced, once intrrupts are detected
+  * and if pipeline is not free at the time, interrupt is introduced as
+  * an instruction to the end of the pipeline. 
+  * 
+  * The instruction format of interrupt is all zeros.
+  */
+
+/**
+  * Rule - issue_instruction_to_pipeline
+  *
+  * decode interface
+  */
+class pushInsToPipeline extends composableInterface {
+  // IMPORTANT - value of x0 should never be issued with *.fromRob asserted
+  val src1        = Output(new Bundle {
+    val fromRob = Bool()
+    val data = UInt(64.W)
+    val robAddr = UInt(robAddrWidth.W)  
+  })               // {jal, jalr, auipc - pc}, {loads, stores, rops*, iops*, conditionalBranches - rs1}
+  val src2        = Output(src1.cloneType)        // {jalr, jal - 4.U}, {loads, stores, iops*, auipc - immediate}, {rops* - rs2}
+  val writeData   = Output(src1.cloneType)
+  val instruction = Output(UInt(32.W))
+  val pc          = Output(UInt(64.W))
+  val robAddr     = Input(UInt(robAddrWidth.W))   // allocated address in rob
+}
+
+/**
+  * Rule - issue_instruction_to_pipeline
+  * 
+  * rob interface
+  */
+class robAllocate extends composableInterface {
+  val instOpcode = Input(UInt(7.W))
+  val robAddr = Output(UInt(robAddrWidth.W))
+  val rd = Input(UInt(5.W))
+  val fwdrs1 = new Bundle {
+    val valid = Output(Bool())
+    val value = Output(UInt(64.W))
+    val robAddr = Input(UInt(robAddrWidth.W))
+  }
+  val fwdrs2 = new Bundle {
+    val valid = Output(Bool())
+    val value = Output(UInt(64.W))
+    val robAddr = Input(UInt(robAddrWidth.W))
+  }
+  /* Wire added to handle exceptions
+  val pc = Input(UInt(32.W)) // to provide mepc when exception are reported */
+}
+
+/**
+  * Rule - issue_instruction_to_pipeline
+  * 
+  * exec interface
+  */
+class pullToPipeline extends composableInterface {
+  val robAddr     = Input(UInt(robAddrWidth.W))
+  val src1        = Input(UInt(64.W))
+  val src2        = Input(UInt(64.W))
+  val writeData   = Input(UInt(64.W))
+  val instruction = Input(UInt(32.W))
+}
+/*******************************************************************/
+
+/*******************************************************************/
+/**
+  * Rule - issue_request_to_memory
+  *
+  * pushes a request to memory, at the current RoB is not involved in 
+  * commiting changes to memory, this should not be a problem for in-order
+  * 
+  * Once Rob can be made involved by changing this Rule and retire_instruction
+  * rule, without changing any of the interfaces
+  */
+
+/**
+  * Rule - issue_request_to_memory
+  * 
+  * exec interface
+  */
+class pushToMemory extends composableInterface {
+  val robAddr     = Output(UInt(robAddrWidth.W))
+  val memAddress  = Output(UInt(64.W))
+  val writeData   = Output(UInt(64.W)) // right justified as in rs2
+  val instruction = Output(UInt(32.W))
+}
+
+/**
+  * Rule - issue_request_to_memory
+  * 
+  * exec interface
+  */
+class pullPipelineMemReq extends composableInterface {
+val address  = Input(UInt(64.W))
+val writeData = Input(UInt(64.W)) // not aligned
+val robAddr = Input(UInt(robAddrWidth.W))
+val instruction = Input(UInt(32.W))
+}
+/*******************************************************************/
+
+/*******************************************************************/
+/**
+  * Rule - push_exec_results_to_rob
+  *
+  * Push results of non-memory requests to pipeline. 
+  * 
+  * When exception handling is added, exec is responsible to look for 
+  * exceptions. Once detected(happens when memory address is calculated)
+  * the address that created the exception is returned to RoB and stops
+  * executing until exception handling is started
+  */
+
+/**
+  * Rule - push_exec_results_to_rob
+  *
+  * exec interface
+  */
+class pushExecResultToRob extends composableInterface {
+  val robAddr     = Output(UInt(robAddrWidth.W))
+  val execResult  = Output(UInt(64.W)) // mtval when exceptionOccured
+  /* Additional wires when exception handling is added
+  val execptionOccured  = Output(Bool())
+  val mcause            = Output(UInt(64.W))
+  val mepc              = Output(UInt(64.W)) */
+}
+
+/**
+  * Rule - push_exec_results_to_rob
+  *
+  * rob interface
+  */
+class pullExecResultToRob extends composableInterface {
+  val robAddr     = Input(UInt(robAddrWidth.W))
+  val execResult  = Input(UInt(64.W)) // mtval when exceptionOccured
+  /* Additional wires when exception handling is added
+  val execptionOccured  = Input(Bool())
+  val mcause            = Input(UInt(64.W))
+  val mepc              = Input(UInt(64.W)) */
+}
+/*******************************************************************/
+
+/*******************************************************************/
+/**
+  * Rule - push_mem_results_to_rob
+  *
+  * Push results of non-memory requests to pipeline. 
+  * 
+  * When exception handling is added, exec is responsible to look for 
+  * exceptions. Once detected(happens when memory address is calculated)
+  * the address that created the exception is returned to RoB and stops
+  * executing until exception handling is started
+  */
+
+/**
+  * Rule - push_mem_results_to_rob
+  *
+  * memAccess interface
+  */
+class pushMemResultToRob extends composableInterface {
+  val robAddr     = Output(UInt(robAddrWidth.W))
+  val writeBackData  = Output(UInt(64.W))
+}
+
+/**
+  * Rule - push_exec_results_to_rob
+  *
+  * rob interface
+  */
+class pullMemResultToRob extends composableInterface {
+  val robAddr     = Input(UInt(robAddrWidth.W))
+  val writeBackData  = Input(UInt(64.W))
+}
+/*******************************************************************/
+
+//**** interfaces and rules relating to fence are not yet added
 
 //======================DECOUPLED INTERFACES============================
 /**
