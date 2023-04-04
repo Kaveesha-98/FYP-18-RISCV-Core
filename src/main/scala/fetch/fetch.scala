@@ -157,7 +157,7 @@ class fetch(val fifo_size: Int) extends Module {
   }
 
   toDecode.instruction := cache.resp.bits
-  printf(p"${cache} ${updateAllCachelines} ${cachelinesUpdatesResp} ${carryOutFence} ${fence_pending}\n")
+  //printf(p"${cache} ${updateAllCachelines} ${cachelinesUpdatesResp} ${carryOutFence} ${fence_pending}\n")
 }
 
 object Verilog extends App {
