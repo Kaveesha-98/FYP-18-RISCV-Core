@@ -101,7 +101,7 @@ class rob extends Module {
   fifo.io.deq.ready := commit.fired
   commit.robAddr := results.commit_addr
 
-  printf(p"${commit}\n")
+  //printf(p"${commit}\n")
 
 }
 
