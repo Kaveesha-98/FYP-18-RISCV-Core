@@ -3,9 +3,10 @@ import chisel3.util._
 import chisel3.util.HasBlackBoxResource
 import chisel3.experimental.BundleLiterals._
 import chisel3.experimental.IO
+import pipeline.memAccess.AXI
 
 class testbench extends Module {
-/*   // once reset programLoader will send data from the lowest byte address
+  // once reset programLoader will send data from the lowest byte address
   // to the highest defined byte address
   val programLoader = IO(Input(new Bundle {
     val valid = Bool()
@@ -13,7 +14,7 @@ class testbench extends Module {
   }))
 
   // transactions with memory get passed only when this is high
-  val runProgram = IO(Input(Bool()))
+  val programRunning = IO(Input(Bool()))
 
   val mem = SyncReadMem (1024 , UInt (8.W))
 
@@ -52,7 +53,7 @@ class testbench extends Module {
 
   switch(serviceState) {
     is(waiting) {
-      when(ports(servicing).ARVALID) { serviceState := getReadReq }
+      when(ports(servicing).ARVALID && programRunning) { serviceState := getReadReq }
     }
     is(getReadReq) {
       serviceState := reading
@@ -60,11 +61,45 @@ class testbench extends Module {
     is(reading) {
       when(ports(servicing).RVALID && ports(servicing).RREADY && ports(servicing).RLAST) { servicing := waiting }
     }
+  }
 
-    Seq(inst, data).foreach( interface => {
-      ports(interface).ARREADY := ((serviceState === waiting) && (servicing === interface))
-      ports(interface).RVALID := ((serviceState === reading) && (servicing === interface))
-      ports(interface).RDATA := 
-    })
-  } */
+  val readData = Cat(Seq.tabulate(8)(i => 
+    Mux(ports(servicing).RVALID && ports(servicing).RREADY, mem.read(readRequest.address + 8.U + i.U), mem.read(readRequest.address + i.U))
+  ).reverse)
+
+  Seq(inst, data).foreach( interface => {
+    ports(interface).ARREADY := ((serviceState === waiting) && (servicing === interface) && programRunning)
+    ports(interface).RVALID := ((serviceState === reading) && (servicing === interface))
+    ports(interface).RDATA := readData
+    ports(interface).RID := 0.U
+    ports(interface).RLAST := (readRequest.arlen === 0.U)
+    ports(interface).RRESP := 0.U
+    // write interfaces driving to ground for now
+    ports(interface).AWREADY := false.B
+    ports(interface).WREADY := false.B
+    ports(interface).BID := 0.U
+    ports(interface).BVALID := false.B
+    ports(interface).BRESP := 0.U
+  })
+
+  dut.peripheral.ARREADY := false.B
+  dut.peripheral.AWREADY := false.B
+  dut.peripheral.BVALID := false.B
+  dut.peripheral.BID := 0.U
+  dut.peripheral.BRESP := 0.U
+  dut.peripheral.RID := 0.U
+  dut.peripheral.RRESP := 0.U
+  dut.peripheral.RVALID := false.B
+  dut.peripheral.WREADY := false.B
+  dut.peripheral.RLAST := false.B
+  dut.peripheral.RDATA := 0.U
+
+  val programAddr = RegInit(0.U(32.W))
+  when(programLoader.valid) {
+    mem.write(programAddr, programLoader.byte)
+  }
+}
+
+object testbench extends App {
+  emitVerilog(new testbench)
 }
