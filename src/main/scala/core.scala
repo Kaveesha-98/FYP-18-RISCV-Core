@@ -37,7 +37,7 @@ class core extends Module {
 
   // connecting branch results to fetch unit
   Seq(fetch.branchRes.fired, decode.branchRes.fired).foreach(
-    _ := (fetch.branchRes.ready && decode.branchRes.ready)
+    _ := (fetch.branchRes.ready && decode.branchRes.ready && (!decode.fromFetch.expected.valid || (decode.fromFetch.expected.pc === fetch.toDecode.pc)))
   )
   fetch.branchRes.isBranch      <> decode.branchRes.isBranch
   fetch.branchRes.branchTaken   <> decode.branchRes.branchTaken

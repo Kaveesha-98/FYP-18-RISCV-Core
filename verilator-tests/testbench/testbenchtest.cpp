@@ -61,18 +61,20 @@ int main(int argc, char **argv){
 		tick(++tickcount, tb, tfp);
 	}
 
-	ifstream input("/mnt/AE06F37906F3413F/University/GitHub/cpu-test/add.bin", ios::binary);
+	ifstream input("add.text", ios::binary);
 
 	vector<unsigned char> buffer(istreambuf_iterator<char>(input), {});
 
+	//cout << buffer.size() << endl;
 	tb -> programLoader_valid = 1;
 	for (int i = 0; i < buffer.size(); i++) {
 		tb -> programLoader_byte = buffer.at(i);
+		//cout << buffer.at(i)&255 << endl;
 		tick(++tickcount, tb, tfp);
 	}
 	tb -> programLoader_valid = 0;
 	tb -> programRunning = 1;
-	for(int i = 0; i < 20; i++){
+	for(int i = 0; i < 4000; i++){
 		tick(++tickcount, tb, tfp);
 	}
 }

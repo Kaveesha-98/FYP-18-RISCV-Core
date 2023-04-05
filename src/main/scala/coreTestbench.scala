@@ -16,7 +16,7 @@ class testbench extends Module {
   // transactions with memory get passed only when this is high
   val programRunning = IO(Input(Bool()))
 
-  val mem = SyncReadMem (1024 , UInt (8.W))
+  val mem = SyncReadMem ((1 << 16) , UInt (8.W))
 
   val waiting :: getReadReq :: reading :: Nil = Enum(3)
   val serviceState = RegInit(waiting)
@@ -59,12 +59,13 @@ class testbench extends Module {
       serviceState := reading
     }
     is(reading) {
-      when(ports(servicing).RVALID && ports(servicing).RREADY && ports(servicing).RLAST) { servicing := waiting }
+      when(ports(servicing).RVALID && ports(servicing).RREADY && ports(servicing).RLAST) { serviceState := waiting }
     }
   }
 
-  val readData = Cat(Seq.tabulate(8)(i => 
-    Mux(ports(servicing).RVALID && ports(servicing).RREADY, mem.read(readRequest.address + 8.U + i.U), mem.read(readRequest.address + i.U))
+  val readData = Cat(Seq.tabulate(4)(i => 
+    mem.read(readRequest.address + i.U + Mux(ports(servicing).RVALID && ports(servicing).RREADY, 4.U, 0.U))
+    //Mux(ports(servicing).RVALID && ports(servicing).RREADY && (serviceState === reading), mem.read(readRequest.address + 4.U + i.U), mem.read(readRequest.address + i.U))
   ).reverse)
 
   Seq(inst, data).foreach( interface => {
@@ -97,6 +98,7 @@ class testbench extends Module {
   val programAddr = RegInit(0.U(32.W))
   when(programLoader.valid) {
     mem.write(programAddr, programLoader.byte)
+    programAddr := programAddr + 1.U
   }
 }
 

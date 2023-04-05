@@ -97,9 +97,9 @@ class iCache(
     _.tagValid -> false.B
 	))
 
-  val cacheHit = (cacheLookUp.tag === cacheLookUp.address(31, 31-iCacheTagWidth)) && cacheLookUp.tagValid
+  val cacheHit = (cacheLookUp.tag === (cacheLookUp.address >> (32-iCacheTagWidth))(iCacheTagWidth-1, 0)) && cacheLookUp.tagValid && cacheLookUp.valid
   
-  fromFetch.req.ready := (!cacheLookUp.valid || (fromFetch.resp.ready && cacheHit)) && !currentReq(1).valid && !pendingInvalidate
+  fromFetch.req.ready := (!cacheLookUp.valid || (fromFetch.resp.ready && cacheHit)) && !currentReq(1).valid && !pendingInvalidate && !(currentReq(0).valid && cacheHit)
 
   val arvalid , rready, writeToCache = RegInit(false.B)
 
@@ -109,8 +109,8 @@ class iCache(
   lowLevelMem.RREADY := rready
 
   // cache misses prompts requests to low level mem
-  when(!arvalid) { arvalid := cacheLookUp.valid && !cacheHit }
-  when(!rready) { rready := cacheLookUp.valid && !cacheHit }
+  when(!arvalid) { arvalid := cacheLookUp.valid && !cacheHit && !rready && !writeToCache }
+  when(!rready) { rready := lowLevelMem.ARVALID && lowLevelMem.ARREADY }
 
   lowLevelMem.ARADDR := Cat(cacheLookUp.address(31, 2+iCacheOffsetWidth), 0.U((2+iCacheOffsetWidth).W))
   lowLevelMem.ARBURST := 1.U
@@ -127,9 +127,11 @@ class iCache(
 
   lowLevelMem.RREADY := rready
 
-  when(lowLevelMem.RVALID && lowLevelMem.RREADY && (lowLevelMem.RID === 0.U)) { newInstrBlock := Cat(newInstrBlock(32*(iCacheBlockSize-1) -1, 0), lowLevelMem.RDATA) }
+  when(lowLevelMem.RVALID && lowLevelMem.RREADY && (lowLevelMem.RID === 0.U)) { newInstrBlock := Cat(lowLevelMem.RDATA, newInstrBlock(32*(iCacheBlockSize) -1, 32)) }
 
   cache.io.write_block := newInstrBlock
+  cache.io.write_tag := cacheLookUp.address >> (2 + iCacheOffsetWidth + iCacheLineWidth)
+  cache.io.write_line_index := cacheLookUp.address >> (2 + iCacheOffsetWidth)
   cache.io.write_in := writeToCache
 
   // finish getting new instruction block from low level cache or primary memory(for now its primary memory)
