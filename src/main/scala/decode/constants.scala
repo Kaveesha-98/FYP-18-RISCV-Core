@@ -27,6 +27,7 @@ object constants {
   val dataWidth = 64
   val insAddrWidth = 32
   val regCount = 32
+  val csrRegCount = 40              // 4096
   val rs1Width = 5
   val rs2Width = 5
   val rdWidth = 5

@@ -7,39 +7,13 @@ import pipeline.configuration.coreConfiguration._
 import pipeline.ports._
 
 object utils {
-  /** once the rules is finalized, this port will be added to ports.scala */
-  class pushInsToPipeline extends composableInterface {
-    val src1 = Output(new Src)
-    /** IMPORTANT - value of x0 should never be issued with *.fromRob asserted */
-    val src2 = Output(src1.cloneType)
-    /** {jal, jalr, auipc - pc}, {loads, stores, rops*, iops*, conditionalBranches - rs1} */
-    val writeData = Output(src1.cloneType)
-    /** {jalr, jal - 4.U}, {loads, stores, iops*, auipc - immediate}, {rops* - rs2} */
-    val instruction = Output(UInt(insAddrWidth.W))
-    val pc = Output(UInt(dataWidth.W))
-    val robAddr = Input(UInt(robAddrWidth.W))
-
-    /** allocated address in rob */
-  }
-
-  /** once the rules is finalized, this port will be added to ports.scala */
-  class pullCommitFrmRob extends composableInterface {
-    /** for now consider that instructions that don't get writeback to register file are not returned back to Decode */
-    val robAddr = Input(UInt(robAddrWidth.W))
-    val rdAddr = Input(UInt(rdWidth.W))
-    val writeBackData = Input(UInt(dataWidth.W))
-  }
-
   class Src extends Bundle {
     val fromRob = Bool()
     /** ROB address of the source */
     val data = UInt(dataWidth.W)
     /** Data of the source */
     val robAddr = UInt(robAddrWidth.W)
-
     /** Where the source data can be found : (true -> ROB, false -> register file) */
-
-
   }
 
   class Validity extends Bundle {

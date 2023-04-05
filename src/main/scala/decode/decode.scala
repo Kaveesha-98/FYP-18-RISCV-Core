@@ -76,6 +76,7 @@ class decode extends Module {
   val rs1Addr = WireDefault(0.U(rs1Width.W))
   val rs2Addr = WireDefault(0.U(rs2Width.W))
   val rdAddr  = WireDefault(0.U(rdWidth.W))
+  val fun3    = WireDefault(0.U(3.W))
 
   val validOutFetchBuf = WireDefault(false.B)         /** Valid signal of fetch buffer */
   val readyOutFetchBuf = WireDefault(false.B)         /** Ready signal of fetch buffer */
@@ -123,6 +124,12 @@ class decode extends Module {
     _.pcAfterBrnach -> 0.U
   ))
   val branchValid   = WireDefault(false.B)            /** Branch result port signals are valid or not */
+
+  val isCSR        = WireDefault(false.B)
+  val waitToCommit = WireDefault(false.B)
+  val csrDone      = RegInit(false.B)
+  val issueRobBuff = RegInit(0.U(robAddrWidth.W))
+  val commitRobBuf = RegInit(0.U(robAddrWidth.W))
 
   /** Initializing states for the FSMs for fetch buffer and decode buffer */
   val emptyState :: fullState :: Nil = Enum(2)        /** States of FSM */
@@ -174,6 +181,7 @@ class decode extends Module {
   rs1Addr := ins(19, 15)
   rs2Addr := ins(24, 20)
   rdAddr  := ins(11, 7)
+  fun3    := ins(14, 12)
 
   insType         := getInsType(opcode)                                                 /** Deciding the instruction type */
   immediate       := getImmediate(ins, insType)                                         /** Calculating the immediate value */
@@ -257,6 +265,7 @@ class decode extends Module {
       validBit(writeRd)    := 1.U
       robValidBit(writeRd) := 0.U
     }
+    commitRobBuf           := writeBackResult.robAddr
   }
 
   /** Rob File writing */
@@ -264,6 +273,7 @@ class decode extends Module {
     when(readyIn) {
       robFile(decodeIssueBuffer.instruction(rdAddr))     := toExec.robAddr
       robValidBit(decodeIssueBuffer.instruction(rdAddr)) := 1.U
+      issueRobBuff                                       := toExec.robAddr
     }
   }
 
@@ -290,7 +300,7 @@ class decode extends Module {
   }
   /**--------------------------------------------------------------------------------------------------------------------*/
 
-  when(stateRegFetchBuf === fullState) {
+  when(stateRegFetchBuf === fullState && !isCSR) {
     stalled       := !((valid.rs1Data || valid.rs1RobAddr) && (valid.rs2RobAddr || valid.rs2Data) && (valid.writeData || valid.writeRobAddr)) || (branch.isBranch && !(valid.rs1Data && valid.rs2Data)) /** stall signal for FSM */
     rs1.fromRob   := !valid.rs1Data && valid.rs1RobAddr
     rs2.fromRob   := !valid.rs2Data && valid.rs2RobAddr
@@ -308,11 +318,11 @@ class decode extends Module {
       }
     }
     is(fullState) {
-      when(stalled) {
+      when(stalled || (isCSR && !csrDone)) {
         validOutFetchBuf := false.B
         readyOutFetchBuf := false.B
       } otherwise {
-        validOutFetchBuf := true.B
+        validOutFetchBuf := Mux(csrDone, false.B, true.B)
         when(readyOutDecodeBuf) {
           readyOutFetchBuf := true.B
           when(!validIn || fromFetch.pc =/= fromFetch.expected.pc) {
@@ -385,6 +395,48 @@ class decode extends Module {
   } otherwise {
     expectedPC := pc + 4.U
   }
+  /**--------------------------------------------------------------------------------------------------------------------*/
+
+  /** CSR handling */
+  /**--------------------------------------------------------------------------------------------------------------------*/
+  isCSR := (opcode === system.U) && (fun3 === "b001".U || fun3 === "b010".U || fun3 === "b011".U || fun3 === "b101".U || fun3 === "b110".U || fun3 === "b111".U)
+  waitToCommit := isCSR && (issueRobBuff =/= commitRobBuf) && !csrDone
+
+  val csrFile = RegInit(VecInit(Seq.fill(csrRegCount)(0.U(64.W))))
+
+  when(isCSR && !waitToCommit) {
+    val csrReadData  = csrFile(immediate)
+    val csrWriteData = registerFile(rs1Addr)
+    val csrWriteImmediate = rs1Addr & "h0000_0000_0000_001f".U
+    registerFile(writeRd) := csrReadData
+    switch(fun3) {
+      is("b001".U) {
+        csrFile(immediate) := csrWriteData
+      }
+      is("b010".U) {
+        csrFile(immediate) := csrReadData | csrWriteData
+      }
+      is("b011".U) {
+        csrFile(immediate) := csrReadData & (~csrWriteData)
+      }
+      is("b101".U) {
+        csrFile(immediate) := csrWriteImmediate
+      }
+      is("b110".U) {
+        csrFile(immediate) := csrReadData | csrWriteImmediate
+      }
+      is("b111".U) {
+        csrFile(immediate) := csrReadData & (~csrWriteImmediate)
+      }
+    }
+    csrDone := true.B
+  }
+
+  when(csrDone && validIn && fromFetch.pc === fromFetch.expected.pc) {
+    csrDone := false.B
+  }
+
+
   /**--------------------------------------------------------------------------------------------------------------------*/
 }
 
