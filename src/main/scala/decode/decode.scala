@@ -271,8 +271,8 @@ class decode extends Module {
   /** Rob File writing */
   when(decodeIssueBuffer.insType === rtype.U || insType === utype.U || insType === itype.U || insType === jtype.U) {
     when(readyIn) {
-      robFile(decodeIssueBuffer.instruction(rdAddr))     := toExec.robAddr
-      robValidBit(decodeIssueBuffer.instruction(rdAddr)) := 1.U
+      robFile(decodeIssueBuffer.instruction(11, 7))     := toExec.robAddr
+      robValidBit(decodeIssueBuffer.instruction(11, 7)) := 1.U
       issueRobBuff                                       := toExec.robAddr
     }
   }
