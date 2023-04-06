@@ -317,7 +317,7 @@ class decode extends Module {
     }
       .otherwise {
         when(validOutFetchBuf && RegNext(fromFetch.fired) && rdAddr =/= 0.U) {
-          validBit(rdAddr) := 0.U
+          //validBit(rdAddr) := 0.U
         }
       }
   }
