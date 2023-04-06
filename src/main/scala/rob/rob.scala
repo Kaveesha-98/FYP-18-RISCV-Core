@@ -81,7 +81,7 @@ class rob extends Module {
   carryOutFence.ready := !results.io.deq.valid
 
   // write results from exec
-  fromExec.ready := results.io.deq.valid
+  fromExec.ready := true.B //results.io.deq.valid
   results.writeportexec.data := Cat(fromExec.execResult,1.U(1.W))
   results.writeportexec.addr := fromExec.robAddr
   results.writeportexec.valid := fromExec.fired

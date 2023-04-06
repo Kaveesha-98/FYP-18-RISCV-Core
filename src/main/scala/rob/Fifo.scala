@@ -77,21 +77,21 @@ class randomAccessFifo[T <: Data ]( gen: T, depth: Int) extends Fifo(gen:
     memReg(writeportmem.addr) := writeportmem.data
   }
 
-  when (io.enq.valid && !fullReg) {
+  when (io.enq.valid && io.enq.ready) {
     memReg(writePtr) := io.enq.bits
     emptyReg := false.B
     fullReg := nextWrite === readPtr
     incrWrite := true.B
   }
 
-  when (io.deq.ready && !emptyReg) {
+  when (io.deq.ready && io.deq.valid) {
     fullReg := false.B
     emptyReg := nextRead === writePtr
     incrRead := true.B
   }
 
   io.deq.bits := memReg(readPtr)
-  io.enq.ready := !fullReg
+  io.enq.ready := !fullReg && !(readPtr + 1.U === writePtr)
   io.deq.valid := !emptyReg
   //printf(p"$io\n")
 }
@@ -118,21 +118,21 @@ class regFifo[T <: Data ]( gen: T, depth: Int) extends Fifo(gen:
   val fullReg = RegInit(false.B)
 
 
-  when (io.enq.valid && !fullReg) {
+  when (io.enq.valid && io.enq.ready) {
     memReg(writePtr) := io.enq.bits
     emptyReg := false.B
     fullReg := nextWrite === readPtr
     incrWrite := true.B
   }
 
-  when (io.deq.ready && !emptyReg) {
+  when (io.deq.ready && io.deq.valid) {
     fullReg := false.B
     emptyReg := nextRead === writePtr
     incrRead := true.B
   }
 
   io.deq.bits := memReg(readPtr)
-  io.enq.ready := !fullReg
+  io.enq.ready := !fullReg && !(readPtr + 1.U === writePtr)
   io.deq.valid := !emptyReg
   //printf(p"$io\n")
 }

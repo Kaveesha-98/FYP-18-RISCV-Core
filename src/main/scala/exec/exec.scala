@@ -55,7 +55,7 @@ class exec extends Module {
   val robPushBuffer = RegInit((new Bundle{
     val waiting = Bool()
     val robAddr = UInt(robAddrWidth.W)
-    val execResult = UInt(robAddrWidth.W)
+    val execResult = UInt(64.W)
   }).Lit(
     _.waiting -> false.B,
     _.robAddr -> 0.U,
@@ -107,9 +107,9 @@ class exec extends Module {
     */
   /* val updateCurrentEntry = (bufferedEntries(0).instruction(6, 2) =/= BitPat("b0?000") && (!robPushBuffer.waiting || toRob.fired)) ||
     (bufferedEntries(0).instruction(6, 2) === BitPat("b0?000") && (!memReqBuffer.waiting || toMemory.fired)) */
-  val updateCurrentEntry = bufferedEntries(0).free ||
+  val updateCurrentEntry = (bufferedEntries(0).free ||
     (bufferedEntries(0).instruction(6, 2) =/= BitPat("b0?000") && (!robPushBuffer.waiting || toRob.fired)) ||
-    (bufferedEntries(0).instruction(6, 2) === BitPat("b0?000") && (!memReqBuffer.waiting || toMemory.fired))
+    (bufferedEntries(0).instruction(6, 2) === BitPat("b0?000") && (!memReqBuffer.waiting || toMemory.fired)))
 
   when(updateCurrentEntry) {
     bufferedEntries(0) := nextExecutingEntry

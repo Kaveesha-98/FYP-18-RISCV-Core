@@ -228,6 +228,21 @@ class decode extends Module {
     rs1.robAddr      := robFile(rs1Addr)
     valid.rs1Data    := Mux(validBit(rs1Addr) === 1.U, true.B, false.B)
     valid.rs1RobAddr := Mux(robValidBit(rs1Addr) === 1.U, true.B, false.B)
+    when(writeBackResult.fired && (robFile(writeBackResult.rdAddr) === writeBackResult.robAddr) && (writeBackResult.rdAddr === rs1Addr)) {
+      rs1.data         := writeBackResult.writeBackData
+      valid.rs1Data    := true.B
+      valid.rs1RobAddr := false.B
+    }
+  }
+  when(writeBackResult.fired && (robFile(writeBackResult.rdAddr) === writeBackResult.robAddr) && toExec.ready && !toExec.fired) {
+    when((writeBackResult.rdAddr === decodeIssueBuffer.instruction(19, 15)) && (decodeIssueBuffer.insType === rtype.U || decodeIssueBuffer.insType === itype.U || decodeIssueBuffer.insType === stype.U || decodeIssueBuffer.insType === btype.U)) {
+      decodeIssueBuffer.rs1.data         := writeBackResult.writeBackData
+      decodeIssueBuffer.rs1.fromRob    := false.B
+    }
+    when((writeBackResult.rdAddr === decodeIssueBuffer.instruction(24, 20)) && (decodeIssueBuffer.insType === rtype.U || decodeIssueBuffer.insType === stype.U || decodeIssueBuffer.insType === btype.U)) {
+      decodeIssueBuffer.rs2.data         := writeBackResult.writeBackData
+      decodeIssueBuffer.rs2.fromRob    := false.B
+    }
   }
 
   /** Setting rs2 properties */
@@ -237,7 +252,7 @@ class decode extends Module {
     valid.rs2Data    := true.B
     valid.rs2RobAddr := false.B
   }
-  when(opcode === load.U || opcode === store.U || opcode === iops.U || opcode === iops32.U || opcode === auipc.U) {
+  when(opcode === load.U || opcode === store.U || opcode === iops.U || opcode === iops32.U || opcode === auipc.U || opcode === lui.U) {
     rs2.data := immediate
     rs2.robAddr      := 0.U
     valid.rs2Data    := true.B
@@ -248,6 +263,11 @@ class decode extends Module {
     rs2.robAddr      := robFile(rs2Addr)
     valid.rs2Data    := Mux(validBit(rs2Addr) === 1.U, true.B, false.B)
     valid.rs2RobAddr := Mux(robValidBit(rs2Addr) === 1.U, true.B, false.B)
+    when(writeBackResult.fired && (robFile(writeBackResult.rdAddr) === writeBackResult.robAddr) && (writeBackResult.rdAddr === rs2Addr)) {
+      rs2.data         := writeBackResult.writeBackData
+      valid.rs2Data    := true.B
+      valid.rs2RobAddr := false.B
+    }
   }
 
   /** Setting rs2 properties for store instructions */
@@ -261,7 +281,9 @@ class decode extends Module {
   /** Register writing */
   when(writeEn === 1.U && validBit(writeRd) === 0.U && writeRd =/= 0.U) {
     registerFile(writeRd)  := writeBackData
-    when(robFile(writeRd) === writeBackResult.robAddr) {
+    when(robFile(writeRd) === writeBackResult.robAddr && 
+      !((insType === rtype.U || insType === utype.U || insType === itype.U || insType === jtype.U) && (validOutFetchBuf && RegNext(fromFetch.fired) && rdAddr =/= 0.U) && rdAddr === writeRd)) {// &&
+      //!((decodeIssueBuffer.insType === rtype.U || decodeIssueBuffer.insType === utype.U || decodeIssueBuffer.insType === itype.U || decodeIssueBuffer.insType === jtype.U) && (validOutDecodeBuf && decodeIssueBuffer.instruction(11, 7) =/= 0.U) && decodeIssueBuffer.instruction(11, 7) === writeRd)) {
       validBit(writeRd)    := 1.U
       robValidBit(writeRd) := 0.U
     }
@@ -269,11 +291,12 @@ class decode extends Module {
   }
 
   /** Rob File writing */
-  when(decodeIssueBuffer.insType === rtype.U || insType === utype.U || insType === itype.U || insType === jtype.U) {
+  when(decodeIssueBuffer.insType === rtype.U || decodeIssueBuffer.insType === utype.U || decodeIssueBuffer.insType === itype.U || decodeIssueBuffer.insType === jtype.U) {
     when(readyIn) {
       robFile(decodeIssueBuffer.instruction(11, 7))     := toExec.robAddr
       robValidBit(decodeIssueBuffer.instruction(11, 7)) := 1.U
       issueRobBuff                                       := toExec.robAddr
+      validBit(decodeIssueBuffer.instruction(11, 7))  := 0.U
     }
   }
 
@@ -293,7 +316,7 @@ class decode extends Module {
 //      rdValid := false.B
     }
       .otherwise {
-        when(validOutFetchBuf && readyIn && rdAddr =/= 0.U) {
+        when(validOutFetchBuf && RegNext(fromFetch.fired) && rdAddr =/= 0.U) {
           validBit(rdAddr) := 0.U
         }
       }
