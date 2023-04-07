@@ -228,13 +228,18 @@ class decode extends Module {
     rs1.robAddr      := robFile(rs1Addr)
     valid.rs1Data    := Mux(validBit(rs1Addr) === 1.U, true.B, false.B)
     valid.rs1RobAddr := Mux(robValidBit(rs1Addr) === 1.U, true.B, false.B)
-    when(writeBackResult.fired && (robFile(writeBackResult.rdAddr) === writeBackResult.robAddr) && (writeBackResult.rdAddr === rs1Addr)) {
+    when(toExec.fired && decodeIssueBuffer.instruction(11, 7) === rs1Addr && (decodeIssueBuffer.insType === rtype.U || decodeIssueBuffer.insType === utype.U || decodeIssueBuffer.insType === itype.U || decodeIssueBuffer.insType === jtype.U) && rs1Addr =/= 0.U) {
+      valid.rs1Data := false.B
+      valid.rs1RobAddr := true.B
+      rs1.robAddr := toExec.robAddr
+      rs1.fromRob := true.B
+    }.elsewhen(writeBackResult.fired && (robFile(writeBackResult.rdAddr) === writeBackResult.robAddr) && (writeBackResult.rdAddr === rs1Addr) && (writeBackResult.rdAddr =/= 0.U) && (writeBackResult.rdAddr =/= 0.U)) {
       rs1.data         := writeBackResult.writeBackData
       valid.rs1Data    := true.B
       valid.rs1RobAddr := false.B
     }
   }
-  when(writeBackResult.fired && (robFile(writeBackResult.rdAddr) === writeBackResult.robAddr) && toExec.ready && !toExec.fired && writeBackResult.rdAddr =/= 0.U) {
+  when(writeBackResult.fired && (robFile(writeBackResult.rdAddr) === writeBackResult.robAddr) && toExec.ready && !toExec.fired && writeBackResult.rdAddr =/= 0.U && (writeBackResult.rdAddr =/= 0.U)) {
     when((writeBackResult.rdAddr === decodeIssueBuffer.instruction(19, 15)) && (decodeIssueBuffer.insType === rtype.U || decodeIssueBuffer.insType === itype.U || decodeIssueBuffer.insType === stype.U || decodeIssueBuffer.insType === btype.U)) {
       decodeIssueBuffer.rs1.data         := writeBackResult.writeBackData
       decodeIssueBuffer.rs1.fromRob    := false.B
@@ -269,7 +274,11 @@ class decode extends Module {
     rs2.robAddr      := robFile(rs2Addr)
     valid.rs2Data    := Mux(validBit(rs2Addr) === 1.U, true.B, false.B)
     valid.rs2RobAddr := Mux(robValidBit(rs2Addr) === 1.U, true.B, false.B)
-    when(writeBackResult.fired && (robFile(writeBackResult.rdAddr) === writeBackResult.robAddr) && (writeBackResult.rdAddr === rs2Addr)) {
+    when(toExec.fired && decodeIssueBuffer.instruction(11, 7) === rs2Addr && (decodeIssueBuffer.insType === rtype.U || decodeIssueBuffer.insType === utype.U || decodeIssueBuffer.insType === itype.U || decodeIssueBuffer.insType === jtype.U) && rs2Addr =/= 0.U) {
+      valid.rs2Data := false.B
+      valid.rs2RobAddr := true.B
+      rs2.robAddr := toExec.robAddr
+    }.elsewhen(writeBackResult.fired && (robFile(writeBackResult.rdAddr) === writeBackResult.robAddr) && (writeBackResult.rdAddr === rs2Addr)) {
       rs2.data         := writeBackResult.writeBackData
       valid.rs2Data    := true.B
       valid.rs2RobAddr := false.B
@@ -282,6 +291,11 @@ class decode extends Module {
     write.robAddr      := robFile(rs2Addr)
     valid.writeData    := Mux(validBit(rs2Addr) === 1.U, true.B, false.B)
     valid.writeRobAddr := Mux(robValidBit(rs2Addr) === 1.U, true.B, false.B)
+    when(toExec.fired && decodeIssueBuffer.instruction(11, 7) === rs2Addr && (decodeIssueBuffer.insType === rtype.U || decodeIssueBuffer.insType === utype.U || decodeIssueBuffer.insType === itype.U || decodeIssueBuffer.insType === jtype.U) && rs2Addr =/= 0.U) {
+      valid.writeData := false.B
+      valid.writeRobAddr := true.B
+      write.robAddr := toExec.robAddr
+    }
   }
 
   /** Register writing */
@@ -331,9 +345,9 @@ class decode extends Module {
 
   when(stateRegFetchBuf === fullState && !isCSR) {
     stalled       := !((valid.rs1Data || valid.rs1RobAddr) && (valid.rs2RobAddr || valid.rs2Data) && (valid.writeData || valid.writeRobAddr)) || (branch.isBranch && !(valid.rs1Data && valid.rs2Data)) /** stall signal for FSM */
-    rs1.fromRob   := !valid.rs1Data && valid.rs1RobAddr
-    rs2.fromRob   := !valid.rs2Data && valid.rs2RobAddr
-    write.fromRob := !valid.writeData && valid.writeRobAddr
+    rs1.fromRob   := !valid.rs1Data && valid.rs1RobAddr || (toExec.fired && (decodeIssueBuffer.insType === rtype.U || decodeIssueBuffer.insType === utype.U || decodeIssueBuffer.insType === itype.U || decodeIssueBuffer.insType === jtype.U) && rs1Addr === decodeIssueBuffer.instruction(11, 7) && rs1Addr =/= 0.U && (insType === rtype.U || insType === itype.U || insType === stype.U))
+    rs2.fromRob   := !valid.rs2Data && valid.rs2RobAddr || (toExec.fired && (decodeIssueBuffer.insType === rtype.U || decodeIssueBuffer.insType === utype.U || decodeIssueBuffer.insType === itype.U || decodeIssueBuffer.insType === jtype.U) && rs2Addr === decodeIssueBuffer.instruction(11, 7) && rs2Addr =/= 0.U && (insType === rtype.U))
+    write.fromRob := !valid.writeData && valid.writeRobAddr || (toExec.fired && (decodeIssueBuffer.insType === rtype.U || decodeIssueBuffer.insType === utype.U || decodeIssueBuffer.insType === itype.U || decodeIssueBuffer.insType === jtype.U) && rs2Addr === decodeIssueBuffer.instruction(11, 7) && rs2Addr =/= 0.U && (insType === stype.U))
   }
 
   /** FSM for ready valid interface of fetch buffer */
