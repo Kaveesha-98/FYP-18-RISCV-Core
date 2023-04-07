@@ -234,7 +234,7 @@ class decode extends Module {
       valid.rs1RobAddr := false.B
     }
   }
-  when(writeBackResult.fired && (robFile(writeBackResult.rdAddr) === writeBackResult.robAddr) && toExec.ready && !toExec.fired) {
+  when(writeBackResult.fired && (robFile(writeBackResult.rdAddr) === writeBackResult.robAddr) && toExec.ready && !toExec.fired && writeBackResult.rdAddr =/= 0.U) {
     when((writeBackResult.rdAddr === decodeIssueBuffer.instruction(19, 15)) && (decodeIssueBuffer.insType === rtype.U || decodeIssueBuffer.insType === itype.U || decodeIssueBuffer.insType === stype.U || decodeIssueBuffer.insType === btype.U)) {
       decodeIssueBuffer.rs1.data         := writeBackResult.writeBackData
       decodeIssueBuffer.rs1.fromRob    := false.B
