@@ -55,7 +55,7 @@ class exec extends Module {
   val robPushBuffer = RegInit((new Bundle{
     val waiting = Bool()
     val robAddr = UInt(robAddrWidth.W)
-    val execResult = UInt(robAddrWidth.W)
+    val execResult = UInt(64.W)
   }).Lit(
     _.waiting -> false.B,
     _.robAddr -> 0.U,
@@ -105,21 +105,24 @@ class exec extends Module {
     * (to rob and/or memory) needs to free or the pending entry is accepted in sampling 
     * cycle.
     */
-  val updateCurrentEntry = (bufferedEntries(0).instruction(6, 2) =/= BitPat("b0?000") && (!robPushBuffer.waiting || toRob.ready)) ||
-    (bufferedEntries(0).instruction(6, 2) === BitPat("b0?000") && (!memReqBuffer.waiting || toMemory.ready))
+  /* val updateCurrentEntry = (bufferedEntries(0).instruction(6, 2) =/= BitPat("b0?000") && (!robPushBuffer.waiting || toRob.fired)) ||
+    (bufferedEntries(0).instruction(6, 2) === BitPat("b0?000") && (!memReqBuffer.waiting || toMemory.fired)) */
+  val updateCurrentEntry = (bufferedEntries(0).free ||
+    (bufferedEntries(0).instruction(6, 2) =/= BitPat("b0?000") && (!robPushBuffer.waiting || toRob.fired)) ||
+    (bufferedEntries(0).instruction(6, 2) === BitPat("b0?000") && (!memReqBuffer.waiting || toMemory.fired)))
 
   when(updateCurrentEntry) {
     bufferedEntries(0) := nextExecutingEntry
   }
 
   // when current entry can't be processed, the next one is buffered
-  when(!updateCurrentEntry) {
-    bufferedEntries(0).free         := !(fromIssue.fired && fromIssue.ready)
-    bufferedEntries(0).robAddr      := fromIssue.robAddr
-    bufferedEntries(0).src1         := fromIssue.src1
-    bufferedEntries(0).src2         := fromIssue.src2
-    bufferedEntries(0).writeData    := fromIssue.writeData
-    bufferedEntries(0).instruction  := fromIssue.instruction 
+  when(!updateCurrentEntry && bufferedEntries(1).free) {
+    bufferedEntries(1).free         := !(fromIssue.fired && fromIssue.ready)
+    bufferedEntries(1).robAddr      := fromIssue.robAddr
+    bufferedEntries(1).src1         := fromIssue.src1
+    bufferedEntries(1).src2         := fromIssue.src2
+    bufferedEntries(1).writeData    := fromIssue.writeData
+    bufferedEntries(1).instruction  := fromIssue.instruction 
   }
 
   // buffered entry is sent to processing
@@ -188,8 +191,8 @@ class exec extends Module {
   }
 
   when(robPushBuffer.waiting) {
-    // condition to deassert waiting
-    robPushBuffer.waiting := !toRob.fired || bufferedEntries(0).free || (bufferedEntries(0).instruction(6, 2) === BitPat("b0?000"))
+    // condition to deassert waiting(if true it has keep on waiting)
+    robPushBuffer.waiting := !toRob.fired || (!bufferedEntries(0).free && (bufferedEntries(0).instruction(6, 2) =/= BitPat("b0?000")))
   }.otherwise {
     // asserting waiting
     robPushBuffer.waiting := !bufferedEntries(0).free && (bufferedEntries(0).instruction(6, 2) =/= BitPat("b0?000"))
