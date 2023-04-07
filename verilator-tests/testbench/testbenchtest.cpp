@@ -75,6 +75,18 @@ int main(int argc, char **argv){
 	tb -> programLoader_valid = 0;
 	tb -> programRunning = 1;
 	for(int i = 0; i < 4000; i++){
+		if(tb -> results_valid) {
+			if(tb -> results_result == 1) {
+				printf("Test successful \n");
+			}else {
+				printf("Program failed at: %d \n", (tb -> results_result) >> 1);
+			}
+			// finishing the last store operation
+			for (int i = 0; i < 100; i++) {
+				tick(++tickcount, tb, tfp);
+			}
+			return 0;
+		}
 		tick(++tickcount, tb, tfp);
 	}
 }

@@ -240,8 +240,14 @@ class decode extends Module {
       decodeIssueBuffer.rs1.fromRob    := false.B
     }
     when((writeBackResult.rdAddr === decodeIssueBuffer.instruction(24, 20)) && (decodeIssueBuffer.insType === rtype.U || decodeIssueBuffer.insType === stype.U || decodeIssueBuffer.insType === btype.U)) {
-      decodeIssueBuffer.rs2.data         := writeBackResult.writeBackData
-      decodeIssueBuffer.rs2.fromRob    := false.B
+      
+      when(decodeIssueBuffer.insType === stype.U) {
+        decodeIssueBuffer.write.data         := writeBackResult.writeBackData
+        decodeIssueBuffer.write.fromRob    := false.B
+      }.otherwise {
+        decodeIssueBuffer.rs2.data         := writeBackResult.writeBackData
+        decodeIssueBuffer.rs2.fromRob    := false.B
+      }
     }
   }
 
