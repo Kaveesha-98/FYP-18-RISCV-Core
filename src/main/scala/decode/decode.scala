@@ -442,12 +442,12 @@ class decode extends Module {
 
   /** CSR handling */
   /**--------------------------------------------------------------------------------------------------------------------*/
-  isCSR := (opcode === system.U) && (fun3 === "b001".U || fun3 === "b010".U || fun3 === "b011".U || fun3 === "b101".U || fun3 === "b110".U || fun3 === "b111".U)
-  waitToCommit := isCSR && (issueRobBuff =/= commitRobBuf) && !csrDone
+  isCSR := false.B //(opcode === system.U) && (fun3 === "b001".U || fun3 === "b010".U || fun3 === "b011".U || fun3 === "b101".U || fun3 === "b110".U || fun3 === "b111".U)
+  waitToCommit := false.B //isCSR && (issueRobBuff =/= commitRobBuf) && !csrDone
 
   val csrFile = RegInit(VecInit(Seq.fill(csrRegCount)(0.U(64.W))))
 
-  when(isCSR && !waitToCommit) {
+  /* when(isCSR && !waitToCommit) {
     val csrReadData  = csrFile(immediate)
     val csrWriteData = registerFile(rs1Addr)
     val csrWriteImmediate = rs1Addr & "h0000_0000_0000_001f".U
@@ -473,11 +473,12 @@ class decode extends Module {
       }
     }
     csrDone := true.B
-  }
+  } */
 
-  when(csrDone && validIn && fromFetch.pc === fromFetch.expected.pc) {
+  /* when(csrDone && validIn && fromFetch.pc === fromFetch.expected.pc) {
     csrDone := false.B
-  }
+  } */
+  csrDone := false.B
 
 
   /**--------------------------------------------------------------------------------------------------------------------*/
