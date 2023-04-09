@@ -64,8 +64,6 @@ class decode extends Module {
     _.immediate     -> 0.U
   ))
 
-  val expectedPCReg = RegInit(0.U(dataWidth.W))
-
   /** Initializing some intermediate wires */
   val opcode  = WireDefault(0.U(opcodeWidth.W))
   val rs1Addr = WireDefault(0.U(rs1Width.W))
