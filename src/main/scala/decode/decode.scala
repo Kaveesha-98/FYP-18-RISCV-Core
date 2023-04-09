@@ -163,7 +163,7 @@ class decode extends Module {
 
   fromFetch.ready          := readyOutFetchBuf
   fromFetch.expected.pc    := RegNext(expectedPC)
-  fromFetch.expected.valid := RegNext(readyOutFetchBuf)
+  fromFetch.expected.valid := RegNext(!((stateRegFetchBuf === fullState && fetchIssueBuffer.instruction(6, 2) === BitPat("b110??")) || (stateRegDecodeBuf === fullState && (decodeIssueBuffer.instruction(6, 2) === BitPat("b110??") || toExec.fired))))
 
   branchRes.ready         := true.B                   /** branchValid */
   branchRes.isBranch      := branch.isBranch
@@ -410,6 +410,9 @@ class decode extends Module {
   }
 
   when(branch.isBranch && !stalled) {
+    val rs1 = decodeIssueBuffer.rs1
+    val rs2 = decodeIssueBuffer.rs2
+    val ins = decodeIssueBuffer.instruction
     val branchTaken = Seq(
       rs1.data === rs2.data,
       rs1.data =/= rs2.data,
@@ -420,6 +423,8 @@ class decode extends Module {
     ).zip(Seq(0, 1, 4, 5, 6, 7).map(i => i.U === ins(14, 12))
     ).map(condAndMatch => condAndMatch._1 && condAndMatch._2).reduce(_ || _)
 
+    val pc = RegNext(fetchIssueBuffer.pc)
+    val immediate = getImmediate(ins, decodeIssueBuffer.insType)
     val branchNextAddress = Mux(branchTaken, pc + immediate, pc + 4.U)
 
     val target = Seq(
