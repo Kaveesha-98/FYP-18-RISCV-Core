@@ -37,7 +37,7 @@ class core extends Module {
 
   // connecting branch results to fetch unit
   Seq(fetch.branchRes.fired, decode.branchRes.fired).foreach(
-    _ := (fetch.branchRes.ready && decode.branchRes.ready)
+    _ := (fetch.branchRes.ready && decode.branchRes.ready && (!decode.fromFetch.expected.valid || (decode.fromFetch.expected.pc === fetch.toDecode.pc)))
   )
   fetch.branchRes.isBranch      <> decode.branchRes.isBranch
   fetch.branchRes.branchTaken   <> decode.branchRes.branchTaken
@@ -83,7 +83,7 @@ class core extends Module {
   rob.fromDecode.instOpcode := decode.toExec.instruction(6, 0)
   rob.fromDecode.rd := decode.toExec.instruction(11, 7)
   rob.fromDecode.fwdrs1.robAddr := decode.toExec.src1.robAddr
-  rob.fromDecode.fwdrs2.robAddr := Mux(decode.toExec.src2.fromRob, decode.toExec.src2.robAddr, decode.toExec.writeData.fromRob)
+  rob.fromDecode.fwdrs2.robAddr := Mux(decode.toExec.writeData.fromRob, decode.toExec.writeData.robAddr, decode.toExec.src2.robAddr)
 
   // connecting exec results with RoB
   Seq(rob.fromExec.fired, exec.toRob.fired).foreach(

@@ -16,7 +16,7 @@ class testbench extends Module {
   // transactions with memory get passed only when this is high
   val programRunning = IO(Input(Bool()))
 
-  val mem = SyncReadMem (1024 , UInt (8.W))
+  val mem = SyncReadMem ((1 << 16) , UInt (8.W))
 
   val waiting :: getReadReq :: reading :: Nil = Enum(3)
   val serviceState = RegInit(waiting)
@@ -59,12 +59,13 @@ class testbench extends Module {
       serviceState := reading
     }
     is(reading) {
-      when(ports(servicing).RVALID && ports(servicing).RREADY && ports(servicing).RLAST) { servicing := waiting }
+      when(ports(servicing).RVALID && ports(servicing).RREADY && ports(servicing).RLAST) { serviceState := waiting }
     }
   }
 
-  val readData = Cat(Seq.tabulate(8)(i => 
-    Mux(ports(servicing).RVALID && ports(servicing).RREADY, mem.read(readRequest.address + 8.U + i.U), mem.read(readRequest.address + i.U))
+  val readData = Cat(Seq.tabulate(4)(i => 
+    mem.read(readRequest.address + i.U + Mux(ports(servicing).RVALID && ports(servicing).RREADY, 4.U, 0.U))
+    //Mux(ports(servicing).RVALID && ports(servicing).RREADY && (serviceState === reading), mem.read(readRequest.address + 4.U + i.U), mem.read(readRequest.address + i.U))
   ).reverse)
 
   Seq(inst, data).foreach( interface => {
@@ -82,21 +83,51 @@ class testbench extends Module {
     ports(interface).BRESP := 0.U
   })
 
+  val testResult = RegInit((new Bundle {
+    val valid = Bool()
+    val result = UInt(8.W)
+  }).Lit(
+    _.result -> 0.U,
+    _.valid -> false.B
+  ))
+
+  val awreadyP = RegInit(true.B)
+  dut.peripheral.AWREADY := awreadyP
+
+  val wreadyP, bvalidP = RegInit(false.B)
+  dut.peripheral.WREADY := wreadyP
+  dut.peripheral.BVALID := bvalidP
+
+  when(dut.peripheral.AWVALID && dut.peripheral.AWVALID) { awreadyP := false.B }
+  .elsewhen(dut.peripheral.BVALID && dut.peripheral.BREADY) { awreadyP := true.B }
+
+  when(dut.peripheral.AWVALID && dut.peripheral.AWREADY) { wreadyP := true.B }
+  .elsewhen(dut.peripheral.WREADY && dut.peripheral.WVALID && dut.peripheral.WLAST) { wreadyP := false.B }
+
+  when(dut.peripheral.WREADY && dut.peripheral.WVALID && dut.peripheral.WLAST) { bvalidP := true.B }
+  .elsewhen(dut.peripheral.BVALID && dut.peripheral.BREADY) { bvalidP := false.B}
+
+  when(dut.peripheral.WREADY && dut.peripheral.WVALID && dut.peripheral.WLAST) {
+    testResult.result := dut.peripheral.WDATA(31, 24)
+    testResult.valid := true.B
+  }
+
+  val results = IO(Output(testResult.cloneType))
+  results := testResult
+
   dut.peripheral.ARREADY := false.B
-  dut.peripheral.AWREADY := false.B
-  dut.peripheral.BVALID := false.B
   dut.peripheral.BID := 0.U
   dut.peripheral.BRESP := 0.U
   dut.peripheral.RID := 0.U
   dut.peripheral.RRESP := 0.U
   dut.peripheral.RVALID := false.B
-  dut.peripheral.WREADY := false.B
   dut.peripheral.RLAST := false.B
   dut.peripheral.RDATA := 0.U
 
   val programAddr = RegInit(0.U(32.W))
   when(programLoader.valid) {
     mem.write(programAddr, programLoader.byte)
+    programAddr := programAddr + 1.U
   }
 }
 

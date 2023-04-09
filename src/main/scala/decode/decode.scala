@@ -234,7 +234,7 @@ class decode extends Module {
     valid.rs2Data    := true.B
     valid.rs2RobAddr := false.B
   }
-  when(opcode === load.U || opcode === store.U || opcode === iops.U || opcode === iops32.U || opcode === auipc.U) {
+  when(opcode === load.U || opcode === store.U || opcode === iops.U || opcode === iops32.U || opcode === auipc.U || opcode === lui.U) {
     rs2.data         := immediate
     rs2.robAddr      := 0.U
     valid.rs2Data    := true.B
@@ -274,7 +274,7 @@ class decode extends Module {
     }
 //    commitRobBuf           := writeBackResult.robAddr
   }
-
+  
   /** Rob File writing and deasserting valid bit for rd */
   when(decodeIssueBuffer.insType === rtype.U || decodeIssueBuffer.insType === utype.U || decodeIssueBuffer.insType === itype.U || decodeIssueBuffer.insType === jtype.U) {
     when(toExec.fired) {

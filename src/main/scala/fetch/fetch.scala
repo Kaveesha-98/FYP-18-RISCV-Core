@@ -1,4 +1,4 @@
-
+import pipeline.fifo._
 
 
 import chisel3._
@@ -81,7 +81,7 @@ class fetch(val fifo_size: Int) extends Module {
   val predictor = Module(new predictor)
   predictor.io.branchres <> branchRes
   predictor.io.curr_pc := PC
-  val PC_fifo = Module(new RegFifo(UInt(128.W), fifo_size))
+  val PC_fifo = Module(new regFifo(UInt(128.W), fifo_size))
 
   //Connect PC fifo
   PC_fifo.io.enq.bits := PC
