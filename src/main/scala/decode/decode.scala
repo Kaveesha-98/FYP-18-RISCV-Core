@@ -262,11 +262,11 @@ class decode extends Module {
     write.data         := registerFile(rs2Addr)
     write.robAddr      := robFile(rs2Addr)
     when(stateRegDecodeBuf === fullState) {                                                                   /** Check dependencies in adjacent instrucitons */
-      valid.rs2Data := rs2Addr =/= decodeIssueBuffer.instruction(11, 7) && validBit(rs2Addr).asBool
-      valid.rs2RobAddr := rs2Addr =/= decodeIssueBuffer.instruction(11, 7) && robValidBit(rs2Addr).asBool
+      valid.writeData := rs2Addr =/= decodeIssueBuffer.instruction(11, 7) && validBit(rs2Addr).asBool
+      valid.writeRobAddr := rs2Addr =/= decodeIssueBuffer.instruction(11, 7) && robValidBit(rs2Addr).asBool
     }.otherwise {
-      valid.rs2Data := validBit(rs2Addr).asBool
-      valid.rs2RobAddr := robValidBit(rs2Addr).asBool
+      valid.writeData := validBit(rs2Addr).asBool
+      valid.writeRobAddr := robValidBit(rs2Addr).asBool
     }
   }
 
@@ -281,7 +281,7 @@ class decode extends Module {
   }
   
   /** Rob File writing and deasserting valid bit for rd */
-  when(decodeIssueBuffer.insType === rtype.U || decodeIssueBuffer.insType === utype.U || decodeIssueBuffer.insType === itype.U || decodeIssueBuffer.insType === jtype.U) {
+  when((decodeIssueBuffer.insType === rtype.U || decodeIssueBuffer.insType === utype.U || decodeIssueBuffer.insType === itype.U || decodeIssueBuffer.insType === jtype.U) && decodeIssueBuffer.instruction(11,7) =/= 0.U) {
     when(toExec.fired) {
       robFile(decodeIssueBuffer.instruction(11,7))     := toExec.robAddr
       robValidBit(decodeIssueBuffer.instruction(11,7)) := 1.U
