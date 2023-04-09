@@ -30,15 +30,6 @@ class decode extends Module {
     * Internal of the module goes here
     */
 /**----------------------------------------------------------------------------------------------------------------------*/
-
-  /** Assigning some wires for inputs to the decode unit */
-  val validIn       = fromFetch.fired                         /** Valid signal from the fetch unit */
-  val writeEn       = writeBackResult.fired                   /** Write enable signal to the register file from the rob */
-  val writeBackData = writeBackResult.writeBackData           /** Writeback data to the register file */
-  val writeRd       = Wire(UInt(rdWidth.W))                   /** Writeback address of the register file */
-  writeRd          := writeBackResult.rdAddr
-  val readyIn       = toExec.fired                            /** Valid signal from the exec unit */
-
   /** Initializing a buffer for storing the input values from the fetch unit */
   val fetchIssueBuffer = RegInit(new Bundle{
     val pc          = UInt(dataWidth.W)
@@ -137,7 +128,7 @@ class decode extends Module {
   val stateRegDecodeBuf = RegInit(emptyState)
 
   /** Storing instruction and pc in the fetch buffer */
-  when(validIn && readyOutFetchBuf && fromFetch.expected.pc === fromFetch.pc) {       /** Data from the fetch unit is valid and fetch buffer is ready and the expected PC is matching */
+  when(fromFetch.fired && readyOutFetchBuf && fromFetch.expected.pc === fromFetch.pc) {       /** Data from the fetch unit is valid and fetch buffer is ready and the expected PC is matching */
     fetchIssueBuffer.instruction := fromFetch.instruction
     fetchIssueBuffer.pc          := fromFetch.pc
   }
@@ -226,8 +217,8 @@ class decode extends Module {
   when(opcode === load.U || opcode === store.U || opcode === rops.U || opcode === iops.U || opcode === rops32.U || opcode === iops32.U || opcode === cjump.U) {
     rs1.data         := registerFile(rs1Addr)
     rs1.robAddr      := robFile(rs1Addr)
-    valid.rs1Data    := Mux(validBit(rs1Addr) === 1.U, true.B, false.B)
-    valid.rs1RobAddr := Mux(robValidBit(rs1Addr) === 1.U, true.B, false.B)
+    valid.rs1Data    := validBit(rs1Addr).asBool
+    valid.rs1RobAddr := robValidBit(rs1Addr).asBool
   }
 
   /** Setting rs2 properties */
@@ -246,31 +237,31 @@ class decode extends Module {
   when(opcode === cjump.U || opcode === rops.U || opcode === rops32.U) {
     rs2.data         := registerFile(rs2Addr)
     rs2.robAddr      := robFile(rs2Addr)
-    valid.rs2Data    := Mux(validBit(rs2Addr) === 1.U, true.B, false.B)
-    valid.rs2RobAddr := Mux(robValidBit(rs2Addr) === 1.U, true.B, false.B)
+    valid.rs2Data    := validBit(rs2Addr).asBool
+    valid.rs2RobAddr := robValidBit(rs2Addr).asBool
   }
 
   /** Setting rs2 properties for store instructions */
   when(opcode === store.U) {
     write.data         := registerFile(rs2Addr)
     write.robAddr      := robFile(rs2Addr)
-    valid.writeData    := Mux(validBit(rs2Addr) === 1.U, true.B, false.B)
-    valid.writeRobAddr := Mux(robValidBit(rs2Addr) === 1.U, true.B, false.B)
+    valid.writeData    := validBit(rs2Addr).asBool
+    valid.writeRobAddr := robValidBit(rs2Addr).asBool
   }
 
   /** Register writing */
-  when(writeEn === 1.U && validBit(writeRd) === 0.U && writeRd =/= 0.U) {
-    registerFile(writeRd)  := writeBackData
-    when(robFile(writeRd) === writeBackResult.robAddr) {
-      validBit(writeRd)    := 1.U
-      robValidBit(writeRd) := 0.U
+  when(writeBackResult.fired === 1.U && validBit(writeBackResult.rdAddr) === 0.U && writeBackResult.rdAddr =/= 0.U) {
+    registerFile(writeBackResult.rdAddr)  := writeBackResult.writeBackData
+    when(robFile(writeBackResult.rdAddr) === writeBackResult.robAddr) {
+      validBit(writeBackResult.rdAddr)    := 1.U
+      robValidBit(writeBackResult.rdAddr) := 0.U
     }
     commitRobBuf           := writeBackResult.robAddr
   }
 
   /** Rob File writing */
   when(decodeIssueBuffer.insType === rtype.U || insType === utype.U || insType === itype.U || insType === jtype.U) {
-    when(readyIn) {
+    when(toExec.fired) {
       robFile(decodeIssueBuffer.instruction(11, 7))     := toExec.robAddr
       robValidBit(decodeIssueBuffer.instruction(11, 7)) := 1.U
       issueRobBuff                                       := toExec.robAddr
@@ -279,13 +270,13 @@ class decode extends Module {
 
   /** Checking rs1 validity */
   when(insType === rtype.U || insType === itype.U || insType === stype.U || insType === btype.U) {
-    valid.rs1Data    := Mux(validBit(rs1Addr) === 0.U, false.B, true.B)
-    valid.rs1RobAddr := Mux(robValidBit(rs1Addr) === 1.U, true.B, false.B)
+    valid.rs1Data    := validBit(rs1Addr).asBool
+    valid.rs1RobAddr := robValidBit(rs1Addr).asBool
   }
   /** Checking rs2 validity */
   when(insType === rtype.U || insType === stype.U || insType === btype.U) {
-    valid.rs2Data    := Mux(validBit(rs2Addr) === 0.U, false.B, true.B)
-    valid.rs2RobAddr := Mux(robValidBit(rs2Addr) === 1.U, true.B, false.B)
+    valid.rs2Data    := validBit(rs2Addr).asBool
+    valid.rs2RobAddr := robValidBit(rs2Addr).asBool
   }
   /** Checking rd validity and changing the valid bit for rd */
   when(insType === rtype.U || insType === utype.U || insType === itype.U || insType === jtype.U) {
@@ -293,7 +284,7 @@ class decode extends Module {
 //      rdValid := false.B
     }
       .otherwise {
-        when(validOutFetchBuf && readyIn && rdAddr =/= 0.U) {
+        when(validOutFetchBuf && toExec.fired && rdAddr =/= 0.U) {
           validBit(rdAddr) := 0.U
         }
       }
@@ -313,7 +304,7 @@ class decode extends Module {
     is(emptyState) {
       validOutFetchBuf := false.B
       readyOutFetchBuf := true.B
-      when(validIn && fromFetch.pc === fromFetch.expected.pc) {
+      when(fromFetch.fired && fromFetch.pc === fromFetch.expected.pc) {
         stateRegFetchBuf := fullState
       }
     }
@@ -322,10 +313,10 @@ class decode extends Module {
         validOutFetchBuf := false.B
         readyOutFetchBuf := false.B
       } otherwise {
-        validOutFetchBuf := Mux(csrDone, false.B, true.B)
+        validOutFetchBuf := !csrDone
         when(readyOutDecodeBuf) {
           readyOutFetchBuf := true.B
-          when(!validIn || fromFetch.pc =/= fromFetch.expected.pc) {
+          when(!fromFetch.fired || fromFetch.pc =/= fromFetch.expected.pc) {
             stateRegFetchBuf := emptyState
           }
         } otherwise {
@@ -348,7 +339,7 @@ class decode extends Module {
     }
     is(fullState) {
       validOutDecodeBuf := true.B
-      when(readyIn) {
+      when(toExec.fired) {
         readyOutDecodeBuf := true.B
         when(!validOutFetchBuf) {
           stateRegDecodeBuf := emptyState
@@ -408,7 +399,7 @@ class decode extends Module {
     val csrReadData  = csrFile(immediate)
     val csrWriteData = registerFile(rs1Addr)
     val csrWriteImmediate = rs1Addr & "h0000_0000_0000_001f".U
-    registerFile(writeRd) := csrReadData
+    registerFile(writeBackResult.rdAddr) := csrReadData
     switch(fun3) {
       is("b001".U) {
         csrFile(immediate) := csrWriteData
@@ -432,7 +423,7 @@ class decode extends Module {
     csrDone := true.B
   }
 
-  when(csrDone && validIn && fromFetch.pc === fromFetch.expected.pc) {
+  when(csrDone && fromFetch.fired && fromFetch.pc === fromFetch.expected.pc) {
     csrDone := false.B
   }
 
