@@ -93,13 +93,37 @@ class rob extends Module {
   results.writeportmem.valid := fromMem.fired
 
   // commit
-  commit.ready := (results.io.deq.bits(0) === 1.U) & results.io.deq.valid & fifo.io.deq.valid
+  val commitResultReady = RegInit(false.B)
+  val commitResult = Reg(new Bundle {
+    val value = UInt(64.W)
+    val rd = UInt(5.W)
+    val opcode = UInt(7.W)
+    val robAddr = UInt(robAddrWidth.W)
+  })
+  when(commitResultReady) { commitResultReady := !commit.fired 
+  }.otherwise { commitResultReady := (results.io.deq.bits(0).asBool && results.io.deq.valid && fifo.io.deq.valid) }
+
+  when(!commitResultReady) {
+    commitResult.value := results.io.deq.bits(64,1)
+    commitResult.rd := fifo.io.deq.bits(4,0)
+    commitResult.opcode := fifo.io.deq.bits(11,5)
+    commitResult.robAddr := results.commit_addr
+  }
+
+  commit.ready := commitResultReady
+  commit.value := commitResult.value
+  commit.rd := commitResult.rd
+  commit.opcode := commitResult.opcode
+  results.io.deq.ready := !commitResultReady && results.io.deq.bits(0).asBool
+  fifo.io.deq.ready := !commitResultReady && results.io.deq.bits(0).asBool
+  commit.robAddr := commitResult.robAddr
+  /* commit.ready := (results.io.deq.bits(0) === 1.U) & results.io.deq.valid & fifo.io.deq.valid
   commit.value := results.io.deq.bits(64,1)
   commit.rd := fifo.io.deq.bits(4,0)
   commit.opcode := fifo.io.deq.bits(11,5)
   results.io.deq.ready := commit.fired
   fifo.io.deq.ready := commit.fired
-  commit.robAddr := results.commit_addr
+  commit.robAddr := results.commit_addr */
 
   //printf(p"${commit}\n")
 
