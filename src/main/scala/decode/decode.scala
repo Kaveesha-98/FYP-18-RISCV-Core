@@ -162,8 +162,8 @@ class decode extends Module {
   toExec.writeData   := decodeIssueBuffer.write
 
   fromFetch.ready          := readyOutFetchBuf
-  fromFetch.expected.pc    := expectedPC
-  fromFetch.expected.valid := readyOutFetchBuf
+  fromFetch.expected.pc    := RegNext(expectedPC)
+  fromFetch.expected.valid := RegNext(readyOutFetchBuf)
 
   branchRes.ready         := true.B                   /** branchValid */
   branchRes.isBranch      := branch.isBranch
@@ -233,11 +233,11 @@ class decode extends Module {
       valid.rs1RobAddr := true.B
       rs1.robAddr := toExec.robAddr
       rs1.fromRob := true.B
-    }.elsewhen(writeBackResult.fired && (robFile(writeBackResult.rdAddr) === writeBackResult.robAddr) && (writeBackResult.rdAddr === rs1Addr) && (writeBackResult.rdAddr =/= 0.U) && (writeBackResult.rdAddr =/= 0.U)) {
+    }/* .elsewhen(writeBackResult.fired && (robFile(writeBackResult.rdAddr) === writeBackResult.robAddr) && (writeBackResult.rdAddr === rs1Addr) && (writeBackResult.rdAddr =/= 0.U) && (writeBackResult.rdAddr =/= 0.U)) {
       rs1.data         := writeBackResult.writeBackData
       valid.rs1Data    := true.B
       valid.rs1RobAddr := false.B
-    }
+    } */
   }
   when(writeBackResult.fired && (robFile(writeBackResult.rdAddr) === writeBackResult.robAddr) && toExec.ready && !toExec.fired && writeBackResult.rdAddr =/= 0.U && (writeBackResult.rdAddr =/= 0.U)) {
     when((writeBackResult.rdAddr === decodeIssueBuffer.instruction(19, 15)) && (decodeIssueBuffer.insType === rtype.U || decodeIssueBuffer.insType === itype.U || decodeIssueBuffer.insType === stype.U || decodeIssueBuffer.insType === btype.U)) {
@@ -249,10 +249,10 @@ class decode extends Module {
       when(decodeIssueBuffer.insType === stype.U) {
         decodeIssueBuffer.write.data         := writeBackResult.writeBackData
         decodeIssueBuffer.write.fromRob    := false.B
-      }.otherwise {
+      }/* .otherwise {
         decodeIssueBuffer.rs2.data         := writeBackResult.writeBackData
         decodeIssueBuffer.rs2.fromRob    := false.B
-      }
+      } */
     }
   }
 
@@ -278,11 +278,11 @@ class decode extends Module {
       valid.rs2Data := false.B
       valid.rs2RobAddr := true.B
       rs2.robAddr := toExec.robAddr
-    }.elsewhen(writeBackResult.fired && (robFile(writeBackResult.rdAddr) === writeBackResult.robAddr) && (writeBackResult.rdAddr === rs2Addr)) {
+    }/* .elsewhen(writeBackResult.fired && (robFile(writeBackResult.rdAddr) === writeBackResult.robAddr) && (writeBackResult.rdAddr === rs2Addr)) {
       rs2.data         := writeBackResult.writeBackData
       valid.rs2Data    := true.B
       valid.rs2RobAddr := false.B
-    }
+    } */
   }
 
   /** Setting rs2 properties for store instructions */
