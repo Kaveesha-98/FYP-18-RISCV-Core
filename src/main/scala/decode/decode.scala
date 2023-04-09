@@ -47,6 +47,7 @@ class decode extends Module {
     val rs1         = new Src                             /** Register source 1 */
     val rs2         = rs1.cloneType                       /** Register source 2 */
     val write       = rs1.cloneType                       /** Register source 2 for store instructions */
+    val immediate   = UInt(dataWidth.W)
   }.Lit(
     _.instruction   -> 0.U,
     _.pc            -> 0.U,
@@ -60,7 +61,10 @@ class decode extends Module {
     _.write.data    -> 0.U,
     _.write.robAddr -> 0.U,
     _.write.fromRob -> false.B,
+    _.immediate     -> 0.U
   ))
+
+  val expectedPCReg = RegInit(0.U(dataWidth.W))
 
   /** Initializing some intermediate wires */
   val opcode  = WireDefault(0.U(opcodeWidth.W))
@@ -141,6 +145,7 @@ class decode extends Module {
     decodeIssueBuffer.rs1         := rs1
     decodeIssueBuffer.rs2         := rs2
     decodeIssueBuffer.write       := write
+    decodeIssueBuffer.immediate   := immediate
   }
 
   /** Assigning outputs */
@@ -152,9 +157,9 @@ class decode extends Module {
   toExec.src2        := decodeIssueBuffer.rs2
   toExec.writeData   := decodeIssueBuffer.write
 
-  fromFetch.ready          := readyOutFetchBuf
+  fromFetch.ready          := readyOutFetchBuf && !(isFetchBranch && stateRegFetchBuf === fullState)
   fromFetch.expected.pc    := expectedPC
-  fromFetch.expected.valid := !isFetchBranch
+  fromFetch.expected.valid := !(isFetchBranch && stateRegFetchBuf === fullState)
 
   branchRes.ready         := branch.isBranch
   branchRes.isBranch      := branch.isBranch
@@ -176,8 +181,8 @@ class decode extends Module {
 
   insType         := getInsType(opcode)                                                 /** Deciding the instruction type */
   immediate       := getImmediate(ins, insType)                                         /** Calculating the immediate value */
-  branch.isBranch := stateRegDecodeBuf === fullState && (decodeIssueBuffer.instruction(6,0) === jump.U || decodeIssueBuffer.instruction(6,0) === jumpr.U || decodeIssueBuffer.instruction(6,0) === cjump.U)      /** Branch detection in decodeIssueBuffer */
-  isFetchBranch   := stateRegFetchBuf === fullState && (opcode === jump.U || opcode === jumpr.U || opcode === cjump.U)      /** Branch detection in fetchIssueBuffer */
+  branch.isBranch := decodeIssueBuffer.instruction(6,0) === jump.U || decodeIssueBuffer.instruction(6,0) === jumpr.U || decodeIssueBuffer.instruction(6,0) === cjump.U      /** Branch detection in decodeIssueBuffer */
+  isFetchBranch   := opcode === jump.U || opcode === jumpr.U || opcode === cjump.U      /** Branch detection in fetchIssueBuffer */
 
   /** Register File activities */
   /**--------------------------------------------------------------------------------------------------------------------*/
@@ -350,10 +355,10 @@ class decode extends Module {
   /** Branch handling */
   /**  ------------------------------------------------------------------------------------------------------------------*/
   def getResult(pattern: (BitPat, UInt), prev: UInt) = pattern match {
-    case (bitpat, result) => Mux(ins === bitpat, result, prev)
+    case (bitpat, result) => Mux(decodeIssueBuffer.instruction === bitpat, result, prev)
   }
 
-  when(branch.isBranch) {
+  when(branch.isBranch && isFetchBranch) {
     val branchTaken = Seq(
       decodeIssueBuffer.rs1.data === decodeIssueBuffer.rs2.data,
       decodeIssueBuffer.rs1.data =/= decodeIssueBuffer.rs2.data,
@@ -364,13 +369,13 @@ class decode extends Module {
     ).zip(Seq(0, 1, 4, 5, 6, 7).map(i => i.U === decodeIssueBuffer.instruction(14, 12))
     ).map(condAndMatch => condAndMatch._1 && condAndMatch._2).reduce(_ || _)
 
-    val branchNextAddress = Mux(branchTaken, decodeIssueBuffer.pc + decodeIssueBuffer.rs2.data, decodeIssueBuffer.pc + 4.U)
+    val branchNextAddress = Mux(branchTaken, decodeIssueBuffer.pc + decodeIssueBuffer.immediate, decodeIssueBuffer.pc + 4.U)
 
     val target = Seq(
-      BitPat("b?????????????????????????1101111") -> (decodeIssueBuffer.pc + decodeIssueBuffer.rs2.data), /** jal */
-      BitPat("b?????????????????????????1100111") -> (decodeIssueBuffer.rs1.data + decodeIssueBuffer.rs2.data), /** jalr */
+      BitPat("b?????????????????????????1101111") -> (decodeIssueBuffer.pc + decodeIssueBuffer.immediate), /** jal */
+      BitPat("b?????????????????????????1100111") -> (decodeIssueBuffer.rs1.data + decodeIssueBuffer.immediate), /** jalr */
       BitPat("b?????????????????????????1100011") -> branchNextAddress, /** branches */
-    ).foldRight(pc + 4.U)(getResult)
+    ).foldRight(decodeIssueBuffer.pc + 4.U)(getResult)
 
     expectedPC := target
     branch.branchTaken := branchTaken
