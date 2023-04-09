@@ -89,5 +89,7 @@ int main(int argc, char **argv){
 		}
 		tick(++tickcount, tb, tfp);
 	}
+
+	printf("Timeout\n");
 }
 
