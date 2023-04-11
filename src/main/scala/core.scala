@@ -58,8 +58,8 @@ class core extends Module {
     _ := (decode.writeBackResult.ready && rob.commit.ready)
   )
   // these connections are incorrect an need to be fixed
-  decode.writeBackResult.rdAddr := rob.commit.rd
-  decode.writeBackResult.writeBackData := rob.commit.value  
+  decode.writeBackResult.rdAddr := rob.commit.rdAddr
+  decode.writeBackResult.writeBackData := rob.commit.writeBackData
   decode.writeBackResult.robAddr := rob.commit.robAddr
   // opcode is left dangling for the moment
 
@@ -109,7 +109,7 @@ class core extends Module {
   Seq(rob.fromMem.fired, memAccess.toRob.fired).foreach(
     _ := (rob.fromMem.ready && memAccess.toRob.ready)
   )
-  rob.fromMem.execResult := memAccess.toRob.writeBackData
+  rob.fromMem.writeBackData := memAccess.toRob.writeBackData
   rob.fromMem.robAddr := memAccess.toRob.robAddr
   
   val dcache = Module(new pipeline.memAccess.cache.dCache)
