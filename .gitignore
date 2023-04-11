@@ -19,3 +19,4 @@ cpu-test/cpuTestbench
 verilator-tests/dCache/dCache
 verilator-tests/testbench/testbench
 .fuse_hidden0000465a000000ff
+verilator-tests/testbench/binToHex
