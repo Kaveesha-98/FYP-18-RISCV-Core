@@ -124,7 +124,7 @@ class fetch(val fifo_size: Int) extends Module {
 
   //redirect signal calc
   val redirect = Wire(Bool())
-  redirect := !(toDecode.expected.pc === toDecode.pc) & toDecode.expected.valid
+  redirect := RegNext(!(toDecode.expected.pc === toDecode.pc) & toDecode.expected.valid)
 
   //redirect bit logic
   when(redirect_bit===0.U & PC_fifo.io.deq.valid){
@@ -136,7 +136,7 @@ class fetch(val fifo_size: Int) extends Module {
 
   //PC update logic
   when(redirect_bit===1.U) {
-    PC := toDecode.expected.pc
+    PC := RegNext(toDecode.expected.pc)
   }.elsewhen(is_fenceI) {
     PC := PC_fifo.io.deq.bits + 4.U
   }.elsewhen(cache.req.valid & cache.req.ready) {
