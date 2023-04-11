@@ -157,7 +157,7 @@ class decode extends Module {
 
   fromFetch.ready          := readyOutFetchBuf && !(isFetchBranch && stateRegFetchBuf === fullState)
   fromFetch.expected.pc    := expectedPC
-  fromFetch.expected.valid := !(isFetchBranch && stateRegFetchBuf === fullState)
+  fromFetch.expected.valid := !((isFetchBranch && stateRegFetchBuf === fullState) || (branch.isBranch && stateRegDecodeBuf === fullState))
 
   branchRes.ready         := branch.isBranch
   branchRes.isBranch      := branch.isBranch
@@ -356,6 +356,8 @@ class decode extends Module {
     case (bitpat, result) => Mux(decodeIssueBuffer.instruction === bitpat, result, prev)
   }
 
+  val targetReg = RegInit(0.U(dataWidth.W))
+
   when(branch.isBranch && isFetchBranch) {
     val branchTaken = Seq(
       decodeIssueBuffer.rs1.data === decodeIssueBuffer.rs2.data,
@@ -375,7 +377,9 @@ class decode extends Module {
       BitPat("b?????????????????????????1100011") -> branchNextAddress, /** branches */
     ).foldRight(decodeIssueBuffer.pc + 4.U)(getResult)
 
-    expectedPC := target
+    targetReg := target
+
+    expectedPC := targetReg
     branch.branchTaken := branchTaken
     branch.pc := decodeIssueBuffer.pc
     branch.pcAfterBrnach := target
