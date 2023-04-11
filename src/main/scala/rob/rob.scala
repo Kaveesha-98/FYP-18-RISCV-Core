@@ -10,6 +10,33 @@ import pipeline.ports._
 import pipeline.configuration.coreConfiguration._
 import pipeline.fifo._
 
+class robAllocate extends composableInterface {
+  val instOpcode = Input(UInt(7.W))
+  val robAddr = Output(UInt(robAddrWidth.W))
+  val rd = Input(UInt(5.W))
+  val fwdrs1 = new Bundle {
+    val valid = Output(Bool())
+    val value = Output(UInt(64.W))
+    val robAddr = Input(UInt(robAddrWidth.W))
+  }
+  val fwdrs2 = new Bundle {
+    val valid = Output(Bool())
+    val value = Output(UInt(64.W))
+    val robAddr = Input(UInt(robAddrWidth.W))
+  }
+}
+
+class commitInstruction extends composableInterface{
+  val rd = Output(UInt(5.W))
+  val value = Output(UInt(64.W))
+  val opcode = Output(UInt(7.W))
+  val robAddr = Output(UInt(robAddrWidth.W))
+}
+
+class pullResultsToRob extends composableInterface {
+  val robAddr     = Input(UInt(robAddrWidth.W))
+  val execResult  = Input(UInt(64.W))
+}
 
 class rob extends Module {
   // defining ports
@@ -17,9 +44,9 @@ class rob extends Module {
 
   val fromDecode = IO(new robAllocate)
 
-  val fromExec = IO(new pullExecResultToRob)
+  val fromExec = IO(new pullResultsToRob)
 
-  val fromMem = IO(new pullMemResultToRob)
+  val fromMem = IO(new pullResultsToRob)
 
   val commit = IO(new commitInstruction)
 
@@ -27,15 +54,15 @@ class rob extends Module {
   // logic starts here
 
   // results fifo
-  // exception occured(1bit) | mcause(64 bits) | value(64 bits) | ready to commit (1 bit)
-  val results = Module(new randomAccessFifo(UInt(130.W),scala.math.pow(2,robAddrWidth).asInstanceOf[Int]))
+  // value(64 bits) | ready to commit (1 bit)
+  val results = Module(new randomAccessFifo(UInt(65.W),scala.math.pow(2,robAddrWidth).asInstanceOf[Int]))
   fromDecode.robAddr := results.addr
   results.io.enq.bits := 0.U
 
   // ordinary fifo
-  // pc | opcode | rd
-  val fifo = Module(new regFifo(UInt(76.W), scala.math.pow(2, robAddrWidth).asInstanceOf[Int]))
-  fifo.io.enq.bits := Cat(fromDecode.pc,Cat(fromDecode.instOpcode,fromDecode.rd))
+  // opcode | rd
+  val fifo = Module(new regFifo(UInt(12.W), scala.math.pow(2, robAddrWidth).asInstanceOf[Int]))
+  fifo.io.enq.bits := Cat(fromDecode.instOpcode,fromDecode.rd)
   fifo.io.enq.valid := fromDecode.fired
 
   fromDecode.ready := results.io.enq.ready & fifo.io.enq.ready
@@ -55,13 +82,13 @@ class rob extends Module {
 
   // write results from exec
   fromExec.ready := true.B //results.io.deq.valid
-  results.writeportexec.data := Cat(Cat(fromExec.execeptionOccured,fromExec.mcause),Cat(fromExec.execResult,1.U(1.W)))
+  results.writeportexec.data := Cat(fromExec.execResult,1.U(1.W))
   results.writeportexec.addr := fromExec.robAddr
   results.writeportexec.valid := fromExec.fired
 
   // write results from mem
   fromMem.ready := results.io.deq.valid
-  results.writeportmem.data := Cat(fromMem.writeBackData, 1.U(1.W))
+  results.writeportmem.data := Cat(fromMem.execResult, 1.U(1.W))
   results.writeportmem.addr := fromMem.robAddr
   results.writeportmem.valid := fromMem.fired
 
@@ -102,6 +129,6 @@ class rob extends Module {
 
 }
 
-object robVerilog extends App {
+object Verilog extends App {
   (new chisel3.stage.ChiselStage).emitVerilog(new rob)
 }

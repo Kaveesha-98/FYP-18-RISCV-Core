@@ -93,7 +93,7 @@ class randomAccessFifo[T <: Data ]( gen: T, depth: Int) extends Fifo(gen:
   }
 
   io.deq.bits := memReg(readPtr)
-  io.enq.ready := !fullReg | (io.deq.valid & io.deq.ready)
+  io.enq.ready := !fullReg
   io.deq.valid := !emptyReg
   //printf(p"$io\n")
 }
@@ -136,7 +136,7 @@ class regFifo[T <: Data ]( gen: T, depth: Int) extends Fifo(gen:
   }
 
   io.deq.bits := memReg(readPtr)
-  io.enq.ready := !fullReg | (io.deq.valid & io.deq.ready)
+  io.enq.ready := !fullReg
   io.deq.valid := !emptyReg
   //printf(p"$io\n")
 }

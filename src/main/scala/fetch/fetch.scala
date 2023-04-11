@@ -1,5 +1,4 @@
 import pipeline.fifo._
-import pipeline.ports._
 
 
 import chisel3._
