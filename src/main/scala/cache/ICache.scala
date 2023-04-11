@@ -64,12 +64,10 @@ class iCache(
 
   val pendingInvalidate = RegInit(false.B)
 
-  when(!pendingInvalidate) { pendingInvalidate := updateAllCachelines.ready && updateAllCachelines.fired }
-  updateAllCachelines.ready := !pendingInvalidate
-
   val lowLevelMem = IO(new AXI)
 
-  val currentReq = RegInit(VecInit(Seq.fill(2)(RegInit((new Bundle{
+  val next :: buffered :: servicing :: Nil = Enum(3)
+  val requests = RegInit(VecInit(Seq.fill(3)(RegInit((new Bundle{
 		val valid 	= Bool()
     val address = UInt(64.W)
 	}).Lit(
@@ -78,12 +76,8 @@ class iCache(
 	)))))
 
   val cache = Module(new iCacheRegisters)
-  cache.io.address := currentReq(0).address(31, 0)
-  cache.io.clock := clock
-  cache.io.reset := reset
-  cache.io.invalidate_all := pendingInvalidate
 
-  val cacheLookUp = RegInit((new Bundle{
+  val results = RegInit(VecInit(Seq.fill(2)(RegInit((new Bundle{
 		val valid 	= Bool()
     val address = UInt(64.W)
     val instruction = UInt(32.W)
@@ -95,24 +89,99 @@ class iCache(
     _.instruction -> 0.U,
     _.tag -> 0.U,
     _.tagValid -> false.B
-	))
+	)))))
 
-  val cacheHit = (cacheLookUp.tag === (cacheLookUp.address >> (32-iCacheTagWidth))(iCacheTagWidth-1, 0)) && cacheLookUp.tagValid && cacheLookUp.valid
-  
-  fromFetch.req.ready := (!cacheLookUp.valid || (fromFetch.resp.ready && cacheHit)) && !currentReq(1).valid && !pendingInvalidate && !(currentReq(0).valid && cacheHit)
+  val cacheFill = RegInit((new Bundle {
+    val valid = Bool()
+    val block = UInt((32*iCacheBlockSize).W)
+  }).Lit(
+    _.block -> 0.U,
+    _.valid -> false.B
+  ))
+  val cacheMissed = !(results(next).tagValid && (results(next).address >> (32-iCacheTagWidth)) === results(next).tag) && results(next).valid 
+  val arvalid , rready = RegInit(false.B)
 
-  val arvalid , rready, writeToCache = RegInit(false.B)
+  when(lowLevelMem.RREADY && lowLevelMem.RVALID) { cacheFill.block := Cat(lowLevelMem.RDATA, cacheFill.block(32*iCacheBlockSize-1, 32)) }
 
-  cache.io.write_in := writeToCache
+  when(!arvalid) { arvalid := cacheMissed && !rready && !cacheFill.valid } 
+  .otherwise { arvalid := !(lowLevelMem.ARVALID && lowLevelMem.ARREADY) }
 
-  lowLevelMem.ARVALID := arvalid
-  lowLevelMem.RREADY := rready
+  when(!rready) { rready := (lowLevelMem.ARVALID && lowLevelMem.ARREADY) }
+  .otherwise { rready := !(lowLevelMem.RLAST && lowLevelMem.RREADY && lowLevelMem.RVALID) }
 
+  when(!cacheFill.valid) { cacheFill.valid := lowLevelMem.RLAST && lowLevelMem.RREADY && lowLevelMem.RVALID }
+  .otherwise { cacheFill.valid := false.B }
+
+  cache.io.write_block := cacheFill.block
+  cache.io.write_in := cacheFill.valid
+  cache.io.write_line_index := results(next).address(iCacheLineWidth + iCacheOffsetWidth + 2, iCacheOffsetWidth + 2)
+  cache.io.write_tag := results(next).address(iCacheTagWidth + iCacheLineWidth + iCacheOffsetWidth + 2, iCacheLineWidth + iCacheOffsetWidth + 2)
+  cache.io.clock := clock
+  cache.io.reset := reset
+
+  val cacheStalled = cacheMissed || (fromFetch.resp.valid && !fromFetch.resp.ready)
+  when((!cacheMissed && fromFetch.resp.ready) || !results(next).valid) {
+    when(results(buffered).valid) { results(next) := results(buffered) }
+    .otherwise {
+      results(next).valid := requests(servicing).valid
+      results(next).address := requests(servicing).address
+      results(next).instruction := cache.io.instruction
+      results(next).tag := cache.io.tag
+      results(next).tagValid := cache.io.tag_valid
+    }
+  }.elsewhen(cacheMissed && cacheFill.valid) {
+    results(next).instruction := (VecInit.tabulate(1 << iCacheOffsetWidth)(i => cacheFill.block(31 + 32*i, 32*i)))(results(next).address(iCacheOffsetWidth+2, 2))
+    results(next).tag := results(next).address(iCacheTagWidth + iCacheLineWidth + iCacheOffsetWidth + 2, iCacheLineWidth + iCacheOffsetWidth + 2)
+    results(next).tagValid := true.B
+  }
+
+  when(!results(buffered).valid) {
+    results(buffered).valid := requests(servicing).valid && results(next).valid && (cacheMissed || !fromFetch.resp.ready)
+    results(buffered).address := requests(servicing).address
+    results(buffered).instruction := cache.io.instruction
+    results(buffered).tag := cache.io.tag
+    results(buffered).tagValid := cache.io.tag_valid
+  }.elsewhen(cacheMissed && cacheFill.valid && (results(next).address(31, iCacheOffsetWidth + 2) === results(buffered).address(31, iCacheOffsetWidth + 2))) {
+    results(buffered).instruction := (VecInit.tabulate(1 << iCacheOffsetWidth)(i => cacheFill.block(31 + 32*i, 32*i)))(results(buffered).address(iCacheOffsetWidth+2, 2))
+    results(buffered).tag := results(next).address(iCacheTagWidth + iCacheLineWidth + iCacheOffsetWidth + 2, iCacheLineWidth + iCacheOffsetWidth + 2)
+    results(buffered).tagValid := true.B
+  }.elsewhen(!cacheStalled) {
+    results(buffered).valid := false.B
+  }
+
+  when(!results(buffered).valid) {
+    requests(servicing) := requests(next)
+    requests(servicing).valid := !cacheStalled && requests(next).valid
+  }.otherwise {
+    requests(servicing).valid := false.B
+  }
+
+  when((!cacheStalled && !results(buffered).valid) || !requests(next).valid) {
+    when(requests(buffered).valid) { requests(next) := requests(buffered) }
+    .otherwise {
+      requests(next).valid := (fromFetch.req.ready && fromFetch.req.valid)
+      requests(next).address := fromFetch.req.bits
+    }
+  }
+
+  when(!requests(buffered).valid) {
+    requests(buffered).valid := (cacheStalled || results(buffered).valid) && (fromFetch.req.ready && fromFetch.req.valid) && requests(next).valid
+    requests(buffered).address := fromFetch.req.bits
+  }.otherwise {
+    requests(buffered).valid := (!cacheStalled && !results(buffered).valid)
+  }
+
+  fromFetch.resp.valid := !cacheMissed && results(next).valid
+  fromFetch.resp.bits := results(next).instruction
+  fromFetch.req.ready := !requests(buffered).valid
+
+  cache.io.address := requests(next).address
+  cache.io.invalidate_all := false.B
+  updateAllCachelines.ready := false.B
+  cachelinesUpdatesResp.ready := false.B
   // cache misses prompts requests to low level mem
-  when(!arvalid) { arvalid := cacheLookUp.valid && !cacheHit && !rready && !writeToCache }
-  when(!rready) { rready := lowLevelMem.ARVALID && lowLevelMem.ARREADY }
 
-  lowLevelMem.ARADDR := Cat(cacheLookUp.address(31, 2+iCacheOffsetWidth), 0.U((2+iCacheOffsetWidth).W))
+  lowLevelMem.ARADDR := Cat(results(next).address(31, 2+iCacheOffsetWidth), 0.U((2+iCacheOffsetWidth).W))
   lowLevelMem.ARBURST := 1.U
   lowLevelMem.ARCACHE := 2.U
   lowLevelMem.ARID := 0.U
@@ -123,65 +192,7 @@ class iCache(
   lowLevelMem.ARSIZE := 2.U
   lowLevelMem.ARVALID := arvalid
 
-  val newInstrBlock = Reg(UInt((32*iCacheBlockSize).W))
-
   lowLevelMem.RREADY := rready
-
-  when(lowLevelMem.RVALID && lowLevelMem.RREADY && (lowLevelMem.RID === 0.U)) { newInstrBlock := Cat(lowLevelMem.RDATA, newInstrBlock(32*(iCacheBlockSize) -1, 32)) }
-
-  cache.io.write_block := newInstrBlock
-  cache.io.write_tag := cacheLookUp.address >> (2 + iCacheOffsetWidth + iCacheLineWidth)
-  cache.io.write_line_index := cacheLookUp.address >> (2 + iCacheOffsetWidth)
-  cache.io.write_in := writeToCache
-
-  // finish getting new instruction block from low level cache or primary memory(for now its primary memory)
-  when(arvalid) { arvalid := !(lowLevelMem.ARVALID && lowLevelMem.ARREADY) }
-  when(rready) { rready := !(lowLevelMem.RREADY && lowLevelMem.RVALID && lowLevelMem.RLAST && (lowLevelMem.RID === 0.U)) }
-
-  when(!writeToCache) { writeToCache := (lowLevelMem.RREADY && lowLevelMem.RVALID && lowLevelMem.RLAST && (lowLevelMem.RID === 0.U)) }
-  when(writeToCache) { writeToCache := false.B }
-
-  // getting a request check through cache
-  when(pendingInvalidate){
-    currentReq(0).valid := false.B
-  }.elsewhen(writeToCache) {
-    // after getting the cache line that missed, reservicing the request
-    currentReq(0).address := cacheLookUp.address
-    currentReq(0).valid := cacheLookUp.valid
-    cacheLookUp.valid := false.B
-  }.elsewhen(currentReq(1).valid) {
-    // once a cache miss is detected, the request in currentReq(0) is buffered to serve after servicing the blocked request
-    currentReq(0) := currentReq(1)
-  }.elsewhen((fromFetch.resp.ready && cacheLookUp.valid && cacheHit) || !cacheLookUp.valid) {
-    // normal operation
-    currentReq(0).address := fromFetch.req.bits
-    currentReq(0).valid := (fromFetch.req.valid && fromFetch.req.ready)
-  }
-
-  when(pendingInvalidate){
-    currentReq(1).valid := false.B
-  }.elsewhen(writeToCache) {
-    // buffering the request after the blocking request
-    // (to service the blocked request, after getting the required cacheline from lower level)
-    currentReq(1) := currentReq(0)
-  }.elsewhen(currentReq(1).valid) { currentReq(1).valid := false.B }
-
-  // servicing a request
-  when(pendingInvalidate){
-    cacheLookUp.valid := false.B
-  }.elsewhen((fromFetch.resp.ready && cacheHit) || !cacheLookUp.valid) {
-    cacheLookUp.address := currentReq(0).address
-    cacheLookUp.instruction := cache.io.instruction
-    cacheLookUp.tag := cache.io.tag
-    cacheLookUp.tagValid := cache.io.tag_valid
-    cacheLookUp.valid := currentReq(0).valid
-  }.elsewhen(writeToCache) {
-    cacheLookUp.valid := false.B
-  }
-
-  fromFetch.resp.valid := cacheHit && cacheLookUp.valid && !pendingInvalidate
-
-  fromFetch.resp.bits := cacheLookUp.instruction
 
   lowLevelMem.AWADDR := 0.U
   lowLevelMem.AWBURST := 1.U
@@ -200,10 +211,6 @@ class iCache(
   lowLevelMem.WVALID := false.B
 
   lowLevelMem.BREADY := false.B
-
-  val waitOnPendingLowLevelReqs = arvalid || rready || writeToCache 
-  cachelinesUpdatesResp.ready := pendingInvalidate && !waitOnPendingLowLevelReqs
-  when(pendingInvalidate) { pendingInvalidate := !(cachelinesUpdatesResp.ready && cachelinesUpdatesResp.fired) }
 }
 
 object iCache extends App {
