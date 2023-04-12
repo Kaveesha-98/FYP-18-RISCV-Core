@@ -212,13 +212,13 @@ class decode extends Module {
   val robFile = Reg(Vec(regCount, UInt(robAddrWidth.W)))
 
   /** Setting rs1 properties */
-  when(opcode === auipc.U || opcode === jump.U || opcode === jumpr.U) {
+  when(opcode === auipc.U || opcode === jump.U) {
     rs1.data         := pc
     rs1.robAddr      := 0.U
     valid.rs1Data    := true.B
     valid.rs1RobAddr := false.B
   }
-  when(opcode === load.U || opcode === store.U || opcode === rops.U || opcode === iops.U || opcode === rops32.U || opcode === iops32.U || opcode === cjump.U) {
+  when(opcode === load.U || opcode === store.U || opcode === rops.U || opcode === iops.U || opcode === rops32.U || opcode === iops32.U || opcode === cjump.U || opcode === jumpr.U) {
     rs1.data         := registerFile(rs1Addr)
     rs1.robAddr      := robFile(rs1Addr)
     when(stateRegDecodeBuf === fullState) {                                                                   /** Check dependencies in adjacent instrucitons */
@@ -231,7 +231,13 @@ class decode extends Module {
   }
 
   /** Setting rs2 properties */
-  when(opcode === jumpr.U || opcode === jump.U) {
+  when(opcode === jumpr.U) {
+    rs1.data         := pc
+    rs1.robAddr      := 0.U
+    valid.rs1Data    := true.B
+    valid.rs1RobAddr := false.B
+  }
+  when(opcode === jump.U) {
     rs2.data         := 4.U
     rs2.robAddr      := 0.U
     valid.rs2Data    := true.B
