@@ -104,7 +104,8 @@ class decode extends Module {
     _.writeRobAddr -> false.B
   ))
 
-  val stalled        = WireDefault(false.B)                 /** Stall signal */
+  val stalled   = WireDefault(false.B)                 /** Stall signal */
+  val exception = RegInit(false.B)
 
   val ins = WireDefault(0.U(insAddrWidth.W))
   val pc  = WireDefault(0.U(dataWidth.W))
@@ -314,18 +315,22 @@ class decode extends Module {
       }
     }
     is(fullState) {
-      when(stalled || (isCSR && !csrDone)) {
-        validOutFetchBuf := false.B
-        readyOutFetchBuf := false.B
-      } otherwise {
-        validOutFetchBuf := !csrDone
-        when(readyOutDecodeBuf) {
-          readyOutFetchBuf := true.B
-          when(!fromFetch.fired || fromFetch.pc =/= fromFetch.expected.pc) {
-            stateRegFetchBuf := emptyState
-          }
-        } otherwise {
+      when(writeBackResult.fired && writeBackResult.execptionOccured) {
+        stateRegFetchBuf := emptyState
+      }.otherwise{
+        when(stalled || (isCSR && !csrDone)) {
+          validOutFetchBuf := false.B
           readyOutFetchBuf := false.B
+        } otherwise {
+          validOutFetchBuf := !csrDone
+          when(readyOutDecodeBuf) {
+            readyOutFetchBuf := true.B
+            when(!fromFetch.fired || fromFetch.pc =/= fromFetch.expected.pc) {
+              stateRegFetchBuf := emptyState
+            }
+          } otherwise {
+            readyOutFetchBuf := false.B
+          }
         }
       }
     }
@@ -343,14 +348,18 @@ class decode extends Module {
       }
     }
     is(fullState) {
-      validOutDecodeBuf := true.B
-      when(toExec.fired) {
-        readyOutDecodeBuf := true.B
-        when(!validOutFetchBuf) {
-          stateRegDecodeBuf := emptyState
+      when(writeBackResult.fired && writeBackResult.execptionOccured) {
+        stateRegDecodeBuf := emptyState
+      }.otherwise {
+        validOutDecodeBuf := true.B
+        when(toExec.fired) {
+          readyOutDecodeBuf := true.B
+          when(!validOutFetchBuf) {
+            stateRegDecodeBuf := emptyState
+          }
+        } otherwise {
+          readyOutDecodeBuf := false.B
         }
-      } otherwise {
-        readyOutDecodeBuf := false.B
       }
     }
   }
@@ -385,12 +394,9 @@ class decode extends Module {
 
     targetReg := target
 
-    expectedPC := targetReg
     branch.branchTaken := branchTaken
     branch.pc := decodeIssueBuffer.pc
     branch.pcAfterBrnach := target
-  } otherwise {
-    expectedPC := pc + 4.U
   }
   /**--------------------------------------------------------------------------------------------------------------------*/
 
@@ -432,9 +438,28 @@ class decode extends Module {
   when(csrDone && fromFetch.fired && fromFetch.pc === fromFetch.expected.pc) {
     csrDone := false.B
   }
-
-
   /**--------------------------------------------------------------------------------------------------------------------*/
+
+  /** Exceptions handling */
+  /** -------------------------------------------------------------------------------------------------------------------- */
+  when(writeBackResult.fired && writeBackResult.execptionOccured) {
+    exception := true.B
+    csrFile("h341".U) := writeBackResult.mepc
+    csrFile("h342".U) := writeBackResult.mcause
+  }
+
+  when(exception && fromFetch.fired) {
+    exception := false.B
+  }
+  /**--------------------------------------------------------------------------------------------------------------------*/
+
+  when(exception) {
+    expectedPC := csrFile("h305".U)
+  }.elsewhen(branch.isBranch && isFetchBranch) {
+    expectedPC := targetReg
+  }.otherwise {
+    expectedPC := pc + 4.U
+  }
 }
 
 object DecodeUnit extends App{
