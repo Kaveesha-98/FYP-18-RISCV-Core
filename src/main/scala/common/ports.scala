@@ -155,9 +155,9 @@ class pullCommitFrmRob extends composableInterface {
   val rdAddr        = Input(UInt(5.W))
   val writeBackData = Input(UInt(64.W)) // mtval when exceptionOccured
   // Additional wires when exception handling is added
-  val execptionOccured  = Input(Bool())
-  val mcause            = Input(UInt(64.W))
-  val mepc              = Input(UInt(64.W))
+//  val execptionOccured  = Input(Bool())
+//  val mcause            = Input(UInt(64.W))
+//  val mepc              = Input(UInt(64.W))
 } 
 
 /**

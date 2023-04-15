@@ -205,10 +205,6 @@ class decode extends Module {
   val registerFile = Reg(Vec(regCount, UInt(dataWidth.W)))
   registerFile(0) := 0.U
 
-  /** Valid bits for each ROB address of registers */
-  val robValidBit = RegInit(VecInit(Seq.fill(regCount)(0.U(1.W))))
-  robValidBit(0) := 0.U
-
   /** Initializing the ROB address table of register file */
   val robFile = Reg(Vec(regCount, UInt(robAddrWidth.W)))
 
@@ -224,10 +220,10 @@ class decode extends Module {
     rs1.robAddr      := robFile(rs1Addr)
     when(stateRegDecodeBuf === fullState) {                                                                   /** Check dependencies in adjacent instrucitons */
       valid.rs1Data    := rs1Addr =/= decodeIssueBuffer.instruction(11,7) && validBit(rs1Addr).asBool
-      valid.rs1RobAddr := rs1Addr =/= decodeIssueBuffer.instruction(11,7) && robValidBit(rs1Addr).asBool
+      valid.rs1RobAddr := rs1Addr =/= decodeIssueBuffer.instruction(11,7) && (~validBit(rs1Addr)).asBool
     }.otherwise {
       valid.rs1Data    := validBit(rs1Addr).asBool
-      valid.rs1RobAddr := robValidBit(rs1Addr).asBool
+      valid.rs1RobAddr := (~validBit(rs1Addr)).asBool
     }
   }
 
@@ -255,10 +251,10 @@ class decode extends Module {
     rs2.robAddr      := robFile(rs2Addr)
     when(stateRegDecodeBuf === fullState) {                                                                   /** Check dependencies in adjacent instrucitons */
       valid.rs2Data    := rs2Addr =/= decodeIssueBuffer.instruction(11,7) && validBit(rs2Addr).asBool
-      valid.rs2RobAddr := rs2Addr =/= decodeIssueBuffer.instruction(11,7) && robValidBit(rs2Addr).asBool
+      valid.rs2RobAddr := rs2Addr =/= decodeIssueBuffer.instruction(11,7) && (~validBit(rs2Addr)).asBool
     }.otherwise {
       valid.rs2Data    := validBit(rs2Addr).asBool
-      valid.rs2RobAddr := robValidBit(rs2Addr).asBool
+      valid.rs2RobAddr := (~validBit(rs2Addr)).asBool
     }
   }
 
@@ -268,10 +264,10 @@ class decode extends Module {
     write.robAddr      := robFile(rs2Addr)
     when(stateRegDecodeBuf === fullState) {                                                                   /** Check dependencies in adjacent instrucitons */
       valid.writeData := rs2Addr =/= decodeIssueBuffer.instruction(11, 7) && validBit(rs2Addr).asBool
-      valid.writeRobAddr := rs2Addr =/= decodeIssueBuffer.instruction(11, 7) && robValidBit(rs2Addr).asBool
+      valid.writeRobAddr := rs2Addr =/= decodeIssueBuffer.instruction(11, 7) && (~validBit(rs2Addr)).asBool
     }.otherwise {
       valid.writeData := validBit(rs2Addr).asBool
-      valid.writeRobAddr := robValidBit(rs2Addr).asBool
+      valid.writeRobAddr := (~validBit(rs2Addr)).asBool
     }
   }
 
@@ -280,7 +276,6 @@ class decode extends Module {
     registerFile(writeBackResult.rdAddr)  := writeBackResult.writeBackData
     when(robFile(writeBackResult.rdAddr) === writeBackResult.robAddr) {
       validBit(writeBackResult.rdAddr)    := 1.U
-      robValidBit(writeBackResult.rdAddr) := 0.U
     }
     commitRobBuf           := writeBackResult.robAddr
   }
@@ -289,7 +284,6 @@ class decode extends Module {
   when((decodeIssueBuffer.insType === rtype.U || decodeIssueBuffer.insType === utype.U || decodeIssueBuffer.insType === itype.U || decodeIssueBuffer.insType === jtype.U) && decodeIssueBuffer.instruction(11,7) =/= 0.U) {
     when(toExec.fired) {
       robFile(decodeIssueBuffer.instruction(11,7))     := toExec.robAddr
-      robValidBit(decodeIssueBuffer.instruction(11,7)) := 1.U
       validBit(decodeIssueBuffer.instruction(11,7))    := 0.U
       issueRobBuff                                     := toExec.robAddr
     }
@@ -297,7 +291,7 @@ class decode extends Module {
 
   /**--------------------------------------------------------------------------------------------------------------------*/
 
-  when(stateRegFetchBuf === fullState /* && !isCSR */) {
+  when(stateRegFetchBuf === fullState && !isCSR) {
     stalled       := !((valid.rs1Data || valid.rs1RobAddr) && (valid.rs2RobAddr || valid.rs2Data) && (valid.writeData || valid.writeRobAddr)) || (isFetchBranch && !(valid.rs1Data && valid.rs2Data)) /** stall signal for FSM */
     rs1.fromRob   := !valid.rs1Data && valid.rs1RobAddr
     rs2.fromRob   := !valid.rs2Data && valid.rs2RobAddr
@@ -315,9 +309,9 @@ class decode extends Module {
       }
     }
     is(fullState) {
-      when(writeBackResult.fired && writeBackResult.execptionOccured) {
-        stateRegFetchBuf := emptyState
-      }.otherwise{
+//      when(writeBackResult.fired && writeBackResult.execptionOccured) {
+//        stateRegFetchBuf := emptyState
+//      }.otherwise{
         when(stalled || (isCSR && !csrDone)) {
           validOutFetchBuf := false.B
           readyOutFetchBuf := false.B
@@ -332,7 +326,7 @@ class decode extends Module {
             readyOutFetchBuf := false.B
           }
         }
-      }
+//      }
     }
   }
   /** -------------------------------------------------------------------------------------------------------------------*/
@@ -348,9 +342,9 @@ class decode extends Module {
       }
     }
     is(fullState) {
-      when(writeBackResult.fired && writeBackResult.execptionOccured) {
-        stateRegDecodeBuf := emptyState
-      }.otherwise {
+//      when(writeBackResult.fired && writeBackResult.execptionOccured) {
+//        stateRegDecodeBuf := emptyState
+//      }.otherwise {
         validOutDecodeBuf := true.B
         when(toExec.fired) {
           readyOutDecodeBuf := true.B
@@ -360,7 +354,7 @@ class decode extends Module {
         } otherwise {
           readyOutDecodeBuf := false.B
         }
-      }
+//      }
     }
   }
   /** -------------------------------------------------------------------------------------------------------------------*/
@@ -420,7 +414,7 @@ class decode extends Module {
         csrFile(immediate) := csrReadData | csrWriteData
       }
       is("b011".U) {
-        csrFile(immediate) := csrReadData & (~csrWriteData)
+        csrFile(immediate) := csrReadData & ~csrWriteData
       }
       is("b101".U) {
         csrFile(immediate) := csrWriteImmediate
@@ -429,7 +423,7 @@ class decode extends Module {
         csrFile(immediate) := csrReadData | csrWriteImmediate
       }
       is("b111".U) {
-        csrFile(immediate) := csrReadData & (~csrWriteImmediate)
+        csrFile(immediate) := csrReadData & ~csrWriteImmediate
       }
     }
     csrDone := true.B
@@ -440,18 +434,18 @@ class decode extends Module {
   }
   /**--------------------------------------------------------------------------------------------------------------------*/
 
-  /** Exceptions handling */
-  /** -------------------------------------------------------------------------------------------------------------------- */
-  when(writeBackResult.fired && writeBackResult.execptionOccured) {
-    exception := true.B
-    csrFile("h341".U) := writeBackResult.mepc
-    csrFile("h342".U) := writeBackResult.mcause
-  }
-
-  when(exception && fromFetch.fired) {
-    exception := false.B
-  }
-  /**--------------------------------------------------------------------------------------------------------------------*/
+//  /** Exceptions handling */
+//  /** -------------------------------------------------------------------------------------------------------------------- */
+//  when(writeBackResult.fired && writeBackResult.execptionOccured) {
+//    exception := true.B
+//    csrFile("h341".U) := writeBackResult.mepc
+//    csrFile("h342".U) := writeBackResult.mcause
+//  }
+//
+//  when(exception && fromFetch.fired) {
+//    exception := false.B
+//  }
+//  /**--------------------------------------------------------------------------------------------------------------------*/
 
   when(exception) {
     expectedPC := csrFile("h305".U)
