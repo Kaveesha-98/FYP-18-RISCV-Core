@@ -51,7 +51,8 @@ class rob extends Module {
   fromDecode.fwdrs2.valid := results.forward2.data(0)
 
   // fence ready
-  carryOutFence.ready := !results.io.deq.valid
+  val is_fence = commit.opcode === "b0001111".U
+  carryOutFence.ready := is_fence
 
   // write results from exec
   fromExec.ready := true.B //results.io.deq.valid
@@ -66,7 +67,7 @@ class rob extends Module {
   results.writeportmem.valid := fromMem.fired
 
   // commit
-  commit.ready := (results.io.deq.bits(0) === 1.U) & results.io.deq.valid & fifo.io.deq.valid
+  commit.ready := (results.io.deq.bits(0) === 1.U || is_fence) & results.io.deq.valid & fifo.io.deq.valid
   commit.writeBackData := results.io.deq.bits(64,1)
   commit.rdAddr := fifo.io.deq.bits(4,0)
   commit.opcode := fifo.io.deq.bits(11,5)
