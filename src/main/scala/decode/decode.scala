@@ -202,11 +202,11 @@ class decode extends Module {
   validBit(0) := 1.U
 
   /** Initializing the Register file */
-  val registerFile = Reg(Vec(regCount, UInt(dataWidth.W)))
+  val registerFile = Mem(regCount, UInt(dataWidth.W))
   registerFile(0) := 0.U
 
   /** Initializing the ROB address table of register file */
-  val robFile = Reg(Vec(regCount, UInt(robAddrWidth.W)))
+  val robFile = Mem(regCount, UInt(robAddrWidth.W))
 
   /** Setting rs1 properties */
   when(opcode === auipc.U || opcode === jump.U) {
@@ -399,7 +399,7 @@ class decode extends Module {
   isCSR := (opcode === system.U) && (fun3 === "b001".U || fun3 === "b010".U || fun3 === "b011".U || fun3 === "b101".U || fun3 === "b110".U || fun3 === "b111".U)
   waitToCommit := isCSR && (issueRobBuff =/= commitRobBuf) && !csrDone
 
-  val csrFile = RegInit(VecInit(Seq.fill(csrRegCount)(0.U(64.W))))
+  val csrFile = Mem(csrRegCount, UInt(dataWidth.W))
 
   when(isCSR && !waitToCommit) {
     val csrReadData  = csrFile(immediate)
