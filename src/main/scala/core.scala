@@ -7,7 +7,7 @@ import chisel3.experimental.BundleLiterals._
 import chisel3.experimental.IO
 
 class core extends Module {
-  /* val icache = Module(new pipeline.memAccess.cache.iCache)
+  val icache = Module(new pipeline.memAccess.cache.iCache)
 
   val iPort = IO(icache.lowLevelMem.cloneType)
 
@@ -61,6 +61,9 @@ class core extends Module {
   decode.writeBackResult.rdAddr := rob.commit.rdAddr
   decode.writeBackResult.writeBackData := rob.commit.writeBackData
   decode.writeBackResult.robAddr := rob.commit.robAddr
+  decode.writeBackResult.execptionOccured := rob.commit.execptionOccured
+  decode.writeBackResult.mcause := rob.commit.mcause
+  decode.writeBackResult.mepc := rob.commit.mepc
   // opcode is left dangling for the moment
 
   val exec = Module(new pipeline.exec.exec)
@@ -84,6 +87,7 @@ class core extends Module {
   rob.fromDecode.rd := decode.toExec.instruction(11, 7)
   rob.fromDecode.fwdrs1.robAddr := decode.toExec.src1.robAddr
   rob.fromDecode.fwdrs2.robAddr := Mux(decode.toExec.writeData.fromRob, decode.toExec.writeData.robAddr, decode.toExec.src2.robAddr)
+  rob.fromDecode.pc := decode.toExec.pc
 
   // connecting exec results with RoB
   Seq(rob.fromExec.fired, exec.toRob.fired).foreach(
@@ -91,6 +95,8 @@ class core extends Module {
   )
   rob.fromExec.execResult := exec.toRob.execResult
   rob.fromExec.robAddr := exec.toRob.robAddr
+  rob.fromExec.execeptionOccured := exec.toRob.execptionOccured
+  rob.fromExec.mcause := exec.toRob.mcause
 
   val memAccess = Module(new pipeline.memAccess.memAccess)
   val peripheral = IO(memAccess.peripherals.cloneType)
@@ -141,7 +147,7 @@ class core extends Module {
   // icache informs the fetch unit to start fetching again
   Seq(icache.cachelinesUpdatesResp.fired, fetch.cachelinesUpdatesResp.fired).foreach(
     _ := (icache.cachelinesUpdatesResp.ready && fetch.cachelinesUpdatesResp.ready)
-  ) */
+  )
 }
 
 object core extends App {

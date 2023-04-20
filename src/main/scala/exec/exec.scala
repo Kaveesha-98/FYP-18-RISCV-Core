@@ -24,10 +24,10 @@ class pushToMemory extends composableInterface {
   val instruction = Output(UInt(32.W))
 }
 
-class pushExecResultToRob extends composableInterface {
+/* class pushExecResultToRob extends composableInterface {
   val robAddr     = Output(UInt(robAddrWidth.W))
   val execResult  = Output(UInt(64.W))
-}
+} */
 
 class exec extends Module {
 
@@ -209,6 +209,8 @@ class exec extends Module {
   }.otherwise {
     passToMem := !bufferedEntries(0).free && (bufferedEntries(0).instruction(6, 2) === BitPat("b0?0??") && updateCurrentEntry)
   }
+  toRob.execptionOccured := false.B
+  toRob.mcause := 0.U
 }
 
 object exec extends App {

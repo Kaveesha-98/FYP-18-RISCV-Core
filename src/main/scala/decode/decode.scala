@@ -104,7 +104,8 @@ class decode extends Module {
     _.writeRobAddr -> false.B
   ))
 
-  val stalled        = WireDefault(false.B)                 /** Stall signal */
+  val stalled   = WireDefault(false.B)                 /** Stall signal */
+  val exception = RegInit(false.B)
 
   val ins = WireDefault(0.U(insAddrWidth.W))
   val pc  = WireDefault(0.U(dataWidth.W))
@@ -201,15 +202,11 @@ class decode extends Module {
   validBit(0) := 1.U
 
   /** Initializing the Register file */
-  val registerFile = Reg(Vec(regCount, UInt(dataWidth.W)))
+  val registerFile = Mem(regCount, UInt(dataWidth.W))
   registerFile(0) := 0.U
 
-  /** Valid bits for each ROB address of registers */
-  val robValidBit = RegInit(VecInit(Seq.fill(regCount)(0.U(1.W))))
-  robValidBit(0) := 0.U
-
   /** Initializing the ROB address table of register file */
-  val robFile = Reg(Vec(regCount, UInt(robAddrWidth.W)))
+  val robFile = Mem(regCount, UInt(robAddrWidth.W))
 
   /** Setting rs1 properties */
   when(opcode === auipc.U || opcode === jump.U) {
@@ -218,24 +215,24 @@ class decode extends Module {
     valid.rs1Data    := true.B
     valid.rs1RobAddr := false.B
   }
-  when(opcode === load.U || opcode === store.U || opcode === rops.U || opcode === iops.U || opcode === rops32.U || opcode === iops32.U || opcode === cjump.U || opcode === jumpr.U || opcode === amos.U) {
+  when(opcode === load.U || opcode === store.U || opcode === rops.U || opcode === iops.U || opcode === rops32.U || opcode === iops32.U || opcode === cjump.U || opcode === jumpr.U) {
     rs1.data         := registerFile(rs1Addr)
     rs1.robAddr      := robFile(rs1Addr)
     when(stateRegDecodeBuf === fullState) {                                                                   /** Check dependencies in adjacent instrucitons */
       valid.rs1Data    := rs1Addr =/= decodeIssueBuffer.instruction(11,7) && validBit(rs1Addr).asBool
-      valid.rs1RobAddr := rs1Addr =/= decodeIssueBuffer.instruction(11,7) && robValidBit(rs1Addr).asBool
+      valid.rs1RobAddr := rs1Addr =/= decodeIssueBuffer.instruction(11,7) && (~validBit(rs1Addr)).asBool
     }.otherwise {
       valid.rs1Data    := validBit(rs1Addr).asBool
-      valid.rs1RobAddr := robValidBit(rs1Addr).asBool
+      valid.rs1RobAddr := (~validBit(rs1Addr)).asBool
     }
   }
 
   /** Setting rs2 properties */
   when(opcode === jumpr.U) {
-    rs2.data         := pc
-    rs2.robAddr      := 0.U
-    valid.rs2Data    := true.B
-    valid.rs2RobAddr := false.B
+    rs1.data         := pc
+    rs1.robAddr      := 0.U
+    valid.rs1Data    := true.B
+    valid.rs1RobAddr := false.B
   }
   when(opcode === jump.U) {
     rs2.data         := 4.U
@@ -254,23 +251,23 @@ class decode extends Module {
     rs2.robAddr      := robFile(rs2Addr)
     when(stateRegDecodeBuf === fullState) {                                                                   /** Check dependencies in adjacent instrucitons */
       valid.rs2Data    := rs2Addr =/= decodeIssueBuffer.instruction(11,7) && validBit(rs2Addr).asBool
-      valid.rs2RobAddr := rs2Addr =/= decodeIssueBuffer.instruction(11,7) && robValidBit(rs2Addr).asBool
+      valid.rs2RobAddr := rs2Addr =/= decodeIssueBuffer.instruction(11,7) && (~validBit(rs2Addr)).asBool
     }.otherwise {
       valid.rs2Data    := validBit(rs2Addr).asBool
-      valid.rs2RobAddr := robValidBit(rs2Addr).asBool
+      valid.rs2RobAddr := (~validBit(rs2Addr)).asBool
     }
   }
 
   /** Setting rs2 properties for store instructions */
-  when(opcode === store.U || opcode === amos.U) {
+  when(opcode === store.U) {
     write.data         := registerFile(rs2Addr)
     write.robAddr      := robFile(rs2Addr)
     when(stateRegDecodeBuf === fullState) {                                                                   /** Check dependencies in adjacent instrucitons */
       valid.writeData := rs2Addr =/= decodeIssueBuffer.instruction(11, 7) && validBit(rs2Addr).asBool
-      valid.writeRobAddr := rs2Addr =/= decodeIssueBuffer.instruction(11, 7) && robValidBit(rs2Addr).asBool
+      valid.writeRobAddr := rs2Addr =/= decodeIssueBuffer.instruction(11, 7) && (~validBit(rs2Addr)).asBool
     }.otherwise {
       valid.writeData := validBit(rs2Addr).asBool
-      valid.writeRobAddr := robValidBit(rs2Addr).asBool
+      valid.writeRobAddr := (~validBit(rs2Addr)).asBool
     }
   }
 
@@ -279,7 +276,6 @@ class decode extends Module {
     registerFile(writeBackResult.rdAddr)  := writeBackResult.writeBackData
     when(robFile(writeBackResult.rdAddr) === writeBackResult.robAddr) {
       validBit(writeBackResult.rdAddr)    := 1.U
-      robValidBit(writeBackResult.rdAddr) := 0.U
     }
     commitRobBuf           := writeBackResult.robAddr
   }
@@ -288,7 +284,6 @@ class decode extends Module {
   when((decodeIssueBuffer.insType === rtype.U || decodeIssueBuffer.insType === utype.U || decodeIssueBuffer.insType === itype.U || decodeIssueBuffer.insType === jtype.U) && decodeIssueBuffer.instruction(11,7) =/= 0.U) {
     when(toExec.fired) {
       robFile(decodeIssueBuffer.instruction(11,7))     := toExec.robAddr
-      robValidBit(decodeIssueBuffer.instruction(11,7)) := 1.U
       validBit(decodeIssueBuffer.instruction(11,7))    := 0.U
       issueRobBuff                                     := toExec.robAddr
     }
@@ -296,7 +291,7 @@ class decode extends Module {
 
   /**--------------------------------------------------------------------------------------------------------------------*/
 
-  when(stateRegFetchBuf === fullState /* && !isCSR */) {
+  when(stateRegFetchBuf === fullState && !isCSR) {
     stalled       := !((valid.rs1Data || valid.rs1RobAddr) && (valid.rs2RobAddr || valid.rs2Data) && (valid.writeData || valid.writeRobAddr)) || (isFetchBranch && !(valid.rs1Data && valid.rs2Data)) /** stall signal for FSM */
     rs1.fromRob   := !valid.rs1Data && valid.rs1RobAddr
     rs2.fromRob   := !valid.rs2Data && valid.rs2RobAddr
@@ -314,20 +309,24 @@ class decode extends Module {
       }
     }
     is(fullState) {
-      when(stalled || (isCSR && !csrDone)) {
-        validOutFetchBuf := false.B
-        readyOutFetchBuf := false.B
-      } otherwise {
-        validOutFetchBuf := !csrDone
-        when(readyOutDecodeBuf) {
-          readyOutFetchBuf := true.B
-          when(!fromFetch.fired || fromFetch.pc =/= fromFetch.expected.pc) {
-            stateRegFetchBuf := emptyState
-          }
-        } otherwise {
+//      when(writeBackResult.fired && writeBackResult.execptionOccured) {
+//        stateRegFetchBuf := emptyState
+//      }.otherwise{
+        when(stalled || (isCSR && !csrDone)) {
+          validOutFetchBuf := false.B
           readyOutFetchBuf := false.B
+        } otherwise {
+          validOutFetchBuf := !csrDone
+          when(readyOutDecodeBuf) {
+            readyOutFetchBuf := true.B
+            when(!fromFetch.fired || fromFetch.pc =/= fromFetch.expected.pc) {
+              stateRegFetchBuf := emptyState
+            }
+          } otherwise {
+            readyOutFetchBuf := false.B
+          }
         }
-      }
+//      }
     }
   }
   /** -------------------------------------------------------------------------------------------------------------------*/
@@ -343,15 +342,19 @@ class decode extends Module {
       }
     }
     is(fullState) {
-      validOutDecodeBuf := true.B
-      when(toExec.fired) {
-        readyOutDecodeBuf := true.B
-        when(!validOutFetchBuf) {
-          stateRegDecodeBuf := emptyState
+//      when(writeBackResult.fired && writeBackResult.execptionOccured) {
+//        stateRegDecodeBuf := emptyState
+//      }.otherwise {
+        validOutDecodeBuf := true.B
+        when(toExec.fired) {
+          readyOutDecodeBuf := true.B
+          when(!validOutFetchBuf) {
+            stateRegDecodeBuf := emptyState
+          }
+        } otherwise {
+          readyOutDecodeBuf := false.B
         }
-      } otherwise {
-        readyOutDecodeBuf := false.B
-      }
+//      }
     }
   }
   /** -------------------------------------------------------------------------------------------------------------------*/
@@ -385,21 +388,18 @@ class decode extends Module {
 
     targetReg := target
 
-    expectedPC := targetReg
     branch.branchTaken := branchTaken
     branch.pc := decodeIssueBuffer.pc
     branch.pcAfterBrnach := target
-  } otherwise {
-    expectedPC := pc + 4.U
   }
   /**--------------------------------------------------------------------------------------------------------------------*/
 
   /** CSR handling */
   /**--------------------------------------------------------------------------------------------------------------------*/
-  /* isCSR := (opcode === system.U) && (fun3 === "b001".U || fun3 === "b010".U || fun3 === "b011".U || fun3 === "b101".U || fun3 === "b110".U || fun3 === "b111".U)
+  isCSR := (opcode === system.U) && (fun3 === "b001".U || fun3 === "b010".U || fun3 === "b011".U || fun3 === "b101".U || fun3 === "b110".U || fun3 === "b111".U)
   waitToCommit := isCSR && (issueRobBuff =/= commitRobBuf) && !csrDone
 
-  val csrFile = RegInit(VecInit(Seq.fill(csrRegCount)(0.U(64.W))))
+  val csrFile = Mem(csrRegCount, UInt(dataWidth.W))
 
   when(isCSR && !waitToCommit) {
     val csrReadData  = csrFile(immediate)
@@ -414,7 +414,7 @@ class decode extends Module {
         csrFile(immediate) := csrReadData | csrWriteData
       }
       is("b011".U) {
-        csrFile(immediate) := csrReadData & (~csrWriteData)
+        csrFile(immediate) := csrReadData & ~csrWriteData
       }
       is("b101".U) {
         csrFile(immediate) := csrWriteImmediate
@@ -423,7 +423,7 @@ class decode extends Module {
         csrFile(immediate) := csrReadData | csrWriteImmediate
       }
       is("b111".U) {
-        csrFile(immediate) := csrReadData & (~csrWriteImmediate)
+        csrFile(immediate) := csrReadData & ~csrWriteImmediate
       }
     }
     csrDone := true.B
@@ -432,9 +432,28 @@ class decode extends Module {
   when(csrDone && fromFetch.fired && fromFetch.pc === fromFetch.expected.pc) {
     csrDone := false.B
   }
- */
-
   /**--------------------------------------------------------------------------------------------------------------------*/
+
+//  /** Exceptions handling */
+//  /** -------------------------------------------------------------------------------------------------------------------- */
+//  when(writeBackResult.fired && writeBackResult.execptionOccured) {
+//    exception := true.B
+//    csrFile("h341".U) := writeBackResult.mepc
+//    csrFile("h342".U) := writeBackResult.mcause
+//  }
+//
+//  when(exception && fromFetch.fired) {
+//    exception := false.B
+//  }
+//  /**--------------------------------------------------------------------------------------------------------------------*/
+
+  when(exception) {
+    expectedPC := csrFile("h305".U)
+  }.elsewhen(branch.isBranch && isFetchBranch) {
+    expectedPC := targetReg
+  }.otherwise {
+    expectedPC := pc + 4.U
+  }
 }
 
 object DecodeUnit extends App{

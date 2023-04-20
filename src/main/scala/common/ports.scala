@@ -306,7 +306,7 @@ class pushExecResultToRob extends composableInterface {
   // Additional wires when exception handling is added
   val execptionOccured  = Output(Bool())
   val mcause            = Output(UInt(64.W))
-  val mepc              = Output(UInt(64.W))
+  //val mepc              = Output(UInt(64.W))
 }
 
 /**
