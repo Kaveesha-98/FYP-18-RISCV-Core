@@ -35,7 +35,7 @@ class rob extends Module {
   // ordinary fifo
   // pc | opcode | rd
   val fifo = Module(new regFifo(UInt(76.W), scala.math.pow(2, robAddrWidth).asInstanceOf[Int]))
-  fifo.io.enq.bits := Cat(0.U,Cat(fromDecode.instOpcode,fromDecode.rd))
+  fifo.io.enq.bits := Cat(fromDecode.pc,Cat(fromDecode.instOpcode,fromDecode.rd))
   fifo.io.enq.valid := fromDecode.fired
 
   fromDecode.ready := results.io.enq.ready & fifo.io.enq.ready
@@ -51,11 +51,12 @@ class rob extends Module {
   fromDecode.fwdrs2.valid := results.forward2.data(0)
 
   // fence ready
-  carryOutFence.ready := false.B //!results.io.deq.valid 
+  val is_fence = commit.opcode === "b0001111".U
+  carryOutFence.ready := is_fence
 
   // write results from exec
   fromExec.ready := true.B //results.io.deq.valid
-  results.writeportexec.data := Cat(0.U,Cat(fromExec.execResult,1.U(1.W)))
+  results.writeportexec.data := Cat(Cat(fromExec.execeptionOccured,fromExec.mcause),Cat(fromExec.execResult,1.U(1.W)))
   results.writeportexec.addr := fromExec.robAddr
   results.writeportexec.valid := fromExec.fired
 
@@ -66,37 +67,22 @@ class rob extends Module {
   results.writeportmem.valid := fromMem.fired
 
   // commit
-  val commitResultReady = RegInit(false.B)
-  val commitResult = Reg(new Bundle {
-    val value = UInt(64.W)
-    val rd = UInt(5.W)
-    val opcode = UInt(7.W)
-    val robAddr = UInt(robAddrWidth.W)
-  })
-  when(commitResultReady) { commitResultReady := !commit.fired 
-  }.otherwise { commitResultReady := (results.io.deq.bits(0).asBool && results.io.deq.valid && fifo.io.deq.valid) }
-
-  when(!commitResultReady) {
-    commitResult.value := results.io.deq.bits(64,1)
-    commitResult.rd := fifo.io.deq.bits(4,0)
-    commitResult.opcode := fifo.io.deq.bits(11,5)
-    commitResult.robAddr := results.commit_addr
-  }
-
-  commit.ready := commitResultReady
-  commit.writeBackData := commitResult.value
-  commit.rdAddr := commitResult.rd
-  commit.opcode := commitResult.opcode
-  results.io.deq.ready := !commitResultReady && results.io.deq.bits(0).asBool
-  fifo.io.deq.ready := !commitResultReady && results.io.deq.bits(0).asBool
-  commit.robAddr := commitResult.robAddr
-  /* commit.ready := (results.io.deq.bits(0) === 1.U) & results.io.deq.valid & fifo.io.deq.valid
-  commit.value := results.io.deq.bits(64,1)
-  commit.rd := fifo.io.deq.bits(4,0)
+  commit.ready := (results.io.deq.bits(0) === 1.U || is_fence) & results.io.deq.valid & fifo.io.deq.valid
+  commit.writeBackData := results.io.deq.bits(64,1)
+  commit.rdAddr := fifo.io.deq.bits(4,0)
   commit.opcode := fifo.io.deq.bits(11,5)
   results.io.deq.ready := commit.fired
   fifo.io.deq.ready := commit.fired
-  commit.robAddr := results.commit_addr */
+  commit.robAddr := results.commit_addr
+  commit.execptionOccured := results.io.deq.bits(129)
+  commit.mcause := results.io.deq.bits(128,65)
+  commit.mepc := fifo.io.deq.bits(75,12)
+
+  // reset rob when an exception is committed
+  when(commit.execptionOccured & commit.fired){
+    results.reset := 1.U
+    fifo.reset := 1.U
+  }
 
   //printf(p"${commit}\n")
 
