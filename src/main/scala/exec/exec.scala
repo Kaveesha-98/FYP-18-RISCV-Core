@@ -66,7 +66,7 @@ class exec extends Module {
     _.instruction -> 0.U
   ))
   val passToMem = RegInit(false.B)
-  toRob.ready := robPushBuffer.waiting && (robPushBuffer.instruction(6, 2) =/= "b00000".U)
+  toRob.ready := robPushBuffer.waiting && (robPushBuffer.instruction(6, 2) =/= "b00000".U && robPushBuffer.instruction(6, 2) =/= "b01011".U)
   toRob.robAddr := robPushBuffer.robAddr
   toRob.execResult := robPushBuffer.execResult
 
@@ -178,9 +178,9 @@ class exec extends Module {
     // possible place for resource optimization
     VecInit.tabulate(7)(i => i match {
       case 0 => (src1 + src2) // address calculation for memory access
-      case 1 => (src1 + src2) // jal link address
+      case 1 => (src2 + 4.U) // jal link address
       case 2 => (src1 + src2) //(63, 0) // filler
-      case 3 => (src1 + src2) //(63, 0) jalr link address
+      case 3 => Mux(instruction(6).asBool, (src1 + src2), src1) //(63, 0) jalr link address
       case 4 => arithmetic64 // (63, 0) op-imm, op
       case 5 => (src2 + Mux(instruction(5).asBool, 0.U, src1)) // (63, 0) // lui and auipc
       case 6 => arithmetic32 // op-32, op-imm-32
@@ -198,16 +198,16 @@ class exec extends Module {
 
   when(robPushBuffer.waiting) {
     // condition to deassert waiting(if true it has keep on waiting)
-    robPushBuffer.waiting := !toRob.fired || (!bufferedEntries(0).free && (bufferedEntries(0).instruction(6, 2) =/= BitPat("b00000")) && updateCurrentEntry)
+    robPushBuffer.waiting := !toRob.fired || (!bufferedEntries(0).free && (bufferedEntries(0).instruction(6, 2) =/= BitPat("b00000") && bufferedEntries(0).instruction(6, 2) =/= BitPat("b01011")) && (!passToMem || toMemory.fired))
   }.otherwise {
     // asserting waiting
-    robPushBuffer.waiting := !bufferedEntries(0).free && (bufferedEntries(0).instruction(6, 2) =/= BitPat("b00000") && updateCurrentEntry)
+    robPushBuffer.waiting := !bufferedEntries(0).free && ((bufferedEntries(0).instruction(6, 2) =/= BitPat("b00000") && bufferedEntries(0).instruction(6, 2) =/= BitPat("b01011")) && updateCurrentEntry)
   }
 
   when(passToMem) {
-    passToMem := !toMemory.fired || bufferedEntries(0).free || (bufferedEntries(0).instruction(6, 2) =/= BitPat("b0?000") && updateCurrentEntry)
+    passToMem := !toMemory.fired || (!bufferedEntries(0).free && (bufferedEntries(0).instruction(6, 2) === BitPat("b0?0??")) && (!robPushBuffer.waiting || toRob.fired))
   }.otherwise {
-    passToMem := !bufferedEntries(0).free && (bufferedEntries(0).instruction(6, 2) === BitPat("b0?000") && updateCurrentEntry)
+    passToMem := !bufferedEntries(0).free && (bufferedEntries(0).instruction(6, 2) === BitPat("b0?0??") && updateCurrentEntry)
   }
 }
 

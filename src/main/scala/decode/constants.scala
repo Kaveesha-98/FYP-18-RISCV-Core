@@ -33,5 +33,5 @@ object constants {
   val rdWidth = 5
   val opcodeWidth = 7
 
-  val initialPC = "h7ffffffc"       // h80000000 - 4
+  val initialPC = "h000ffffc"       // h80000000 - 4
 }

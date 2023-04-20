@@ -35,61 +35,69 @@ int main(int argc, char **argv){
 
 	// Call commandArgs first!
 	Verilated::commandArgs(argc, argv);
+
+	//vector<string> tests;
+	ifstream infile("tests.txt");
 	
-	//Instantiate our design
-	Vtestbench *tb = new Vtestbench;
-	
-	Verilated::traceEverOn(true);
-	VerilatedVcdC* tfp = new VerilatedVcdC;
-	tb->trace(tfp, 99);
-	tfp->open("testbench_trace.vcd");
-	
-	tb -> reset = 0;
-	for(int i = 0; i < 5; i++){
-		tick(++tickcount, tb, tfp);
-	}
+	string test;
 
-	tb -> reset = 1;
-	tb -> programRunning = 0;
-	tb -> programLoader_valid = 0;
-	for(int i = 0; i < 8; i++){
-		tick(++tickcount, tb, tfp);
-	}
-
-	tb -> reset = 0;
-	for(int i = 0; i < 5; i++){
-		tick(++tickcount, tb, tfp);
-	}
-
-	ifstream input("add.text", ios::binary);
-
-	vector<unsigned char> buffer(istreambuf_iterator<char>(input), {});
-
-	//cout << buffer.size() << endl;
-	tb -> programLoader_valid = 1;
-	for (int i = 0; i < buffer.size(); i++) {
-		tb -> programLoader_byte = buffer.at(i);
-		//cout << buffer.at(i)&255 << endl;
-		tick(++tickcount, tb, tfp);
-	}
-	tb -> programLoader_valid = 0;
-	tb -> programRunning = 1;
-	for(int i = 0; i < 4000; i++){
-		if(tb -> results_valid) {
-			if(tb -> results_result == 1) {
-				printf("Test successful \n");
-			}else {
-				printf("Program failed at: %d \n", (tb -> results_result) >> 1);
-			}
-			// finishing the last store operation
-			for (int i = 0; i < 100; i++) {
-				tick(++tickcount, tb, tfp);
-			}
-			return 0;
+	while (getline(infile, test)) {
+		//Instantiate our design
+		Vtestbench *tb = new Vtestbench;
+		
+		Verilated::traceEverOn(true);
+		VerilatedVcdC* tfp = new VerilatedVcdC;
+		tb->trace(tfp, 99);
+		tfp->open(("waveforms/wavefrom_" + test + ".vcd").c_str());
+		
+		tb -> reset = 0;
+		for(int i = 0; i < 5; i++){
+			tick(++tickcount, tb, tfp);
 		}
-		tick(++tickcount, tb, tfp);
-	}
 
-	printf("Timeout\n");
+		tb -> reset = 1;
+		tb -> programRunning = 0;
+		tb -> programLoader_valid = 0;
+		for(int i = 0; i < 8; i++){
+			tick(++tickcount, tb, tfp);
+		}
+
+		tb -> reset = 0;
+		for(int i = 0; i < 5; i++){
+			tick(++tickcount, tb, tfp);
+		}
+
+		ifstream input(("target_texts/" + test + ".text"), ios::binary);
+		printf("Running test for %s: ", test.c_str());
+
+		vector<unsigned char> buffer(istreambuf_iterator<char>(input), {});
+
+		//cout << buffer.size() << endl;
+		tb -> programLoader_valid = 1;
+		for (int i = 0; i < buffer.size(); i++) {
+			tb -> programLoader_byte = buffer.at(i);
+			//cout << buffer.at(i)&255 << endl;
+			tick(++tickcount, tb, tfp);
+		}
+		tb -> programLoader_valid = 0;
+		tb -> programRunning = 1;
+		for(int i = 0; i < 5000; i++){
+			if(tb -> results_valid) {
+				if(tb -> results_result == 1) {
+					printf("Test successful \n");
+				}else {
+					printf("Program failed at: %d \n", (tb -> results_result) >> 1);
+				}
+				// finishing the last store operation
+				/* for (int i = 0; i < 100; i++) {
+					tick(++tickcount, tb, tfp);
+				} */
+				break;
+			}
+			tick(++tickcount, tb, tfp);
+		}
+		if (tb -> results_result == 0)
+			printf("Timeout\n");
+	}
 }
 

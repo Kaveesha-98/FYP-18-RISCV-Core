@@ -1,4 +1,5 @@
 import pipeline.fifo._
+import pipeline.ports._
 
 
 import chisel3._
@@ -69,7 +70,7 @@ class fetch(val fifo_size: Int) extends Module {
     */
 
   //register defs
-  val PC = RegInit(0.U(64.W))
+  val PC = RegInit("h00100000".U(64.W))
   val redirect_bit= RegInit(0.U(1.W))
   val handle_fenceI= RegInit(0.U(1.W))
   val clear_cache_req= RegInit(0.U(1.W))

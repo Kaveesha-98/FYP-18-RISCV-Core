@@ -15,8 +15,8 @@ import chisel3.experimental.IO
 
 object coreConfiguration {
     val robAddrWidth = 3
-    val ramBaseAddress = 0x00100000
-    val ramHighAddress = 0x1FFFFFFF
+    val ramBaseAddress = 0x0000000000100000L
+    val ramHighAddress = 0x000000001FFFFFFFL
     val iCacheOffsetWidth = 2
     val iCacheLineWidth = 6
     val iCacheTagWidth = 32 - iCacheLineWidth - iCacheOffsetWidth - 2
