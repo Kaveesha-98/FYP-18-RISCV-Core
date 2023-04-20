@@ -1,5 +1,7 @@
 package pipeline.decode
 
+import pipeline.configuration.coreConfiguration
+
 object constants {
   val lui = "b0110111"
   val auipc = "b0010111"
@@ -33,5 +35,5 @@ object constants {
   val rdWidth = 5
   val opcodeWidth = 7
 
-  val initialPC = "h000ffffc"       // h80000000 - 4
+  val initialPC = coreConfiguration.instructionBase - 4      // h80000000 - 4
 }

@@ -198,16 +198,16 @@ class exec extends Module {
 
   when(robPushBuffer.waiting) {
     // condition to deassert waiting(if true it has keep on waiting)
-    robPushBuffer.waiting := !toRob.fired || (!bufferedEntries(0).free && (bufferedEntries(0).instruction(6, 2) =/= BitPat("b00000") && bufferedEntries(0).instruction(6, 2) =/= BitPat("b01011")) && (!passToMem || toMemory.fired))
+    robPushBuffer.waiting := (!toRob.fired || (!bufferedEntries(0).free && (bufferedEntries(0).instruction(6, 2) =/= BitPat("b00000") && bufferedEntries(0).instruction(6, 2) =/= BitPat("b01011")) && (!passToMem || toMemory.fired))) && (bufferedEntries(0).instruction(6, 2) =/= BitPat("b00011"))
   }.otherwise {
     // asserting waiting
-    robPushBuffer.waiting := !bufferedEntries(0).free && ((bufferedEntries(0).instruction(6, 2) =/= BitPat("b00000") && bufferedEntries(0).instruction(6, 2) =/= BitPat("b01011")) && updateCurrentEntry)
+    robPushBuffer.waiting := !bufferedEntries(0).free && ((bufferedEntries(0).instruction(6, 2) =/= BitPat("b00000") && bufferedEntries(0).instruction(6, 2) =/= BitPat("b01011")) && updateCurrentEntry) && (bufferedEntries(0).instruction(6, 2) =/= BitPat("b00011"))
   }
 
   when(passToMem) {
-    passToMem := !toMemory.fired || (!bufferedEntries(0).free && (bufferedEntries(0).instruction(6, 2) === BitPat("b0?0??")) && (!robPushBuffer.waiting || toRob.fired))
+    passToMem := (!toMemory.fired || (!bufferedEntries(0).free && (bufferedEntries(0).instruction(6, 2) === BitPat("b0?0??")) && (!robPushBuffer.waiting || toRob.fired))) && (bufferedEntries(0).instruction(6, 2) =/= BitPat("b00011"))
   }.otherwise {
-    passToMem := !bufferedEntries(0).free && (bufferedEntries(0).instruction(6, 2) === BitPat("b0?0??") && updateCurrentEntry)
+    passToMem := !bufferedEntries(0).free && (bufferedEntries(0).instruction(6, 2) === BitPat("b0?0??") && updateCurrentEntry) && (bufferedEntries(0).instruction(6, 2) =/= BitPat("b00011"))
   }
   toRob.execptionOccured := false.B
   toRob.mcause := 0.U

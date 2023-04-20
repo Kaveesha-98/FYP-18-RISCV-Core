@@ -6,7 +6,7 @@ import chisel3.experimental.IO
 import pipeline.memAccess.AXI
 
 class testbench extends Module {
-  /* // once reset programLoader will send data from the lowest byte address
+  // once reset programLoader will send data from the lowest byte address
   // to the highest defined byte address
   val programLoader = IO(Input(new Bundle {
     val valid = Bool()
@@ -72,6 +72,12 @@ class testbench extends Module {
   val awready = RegInit(true.B)
   val waddr = Reg(UInt(32.W))
 
+  val programResult = IO(Output(new Bundle {
+    val valid = Bool()
+    val result = UInt(32.W)
+  }))
+  programResult.valid := false.B
+  programResult.result := ports(data).WDATA
   when(programRunning) {
     when(ports(data).AWVALID && ports(data).AWREADY) { waddr <= ports(data).AWADDR }
     .elsewhen(ports(data).WREADY && ports(data).WVALID) { waddr <= waddr + 4.U }
@@ -86,6 +92,7 @@ class testbench extends Module {
     .otherwise { bvalid := ports(data).WLAST && ports(data).WVALID && ports(data).WREADY }
 
     when(ports(data).WVALID && ports(data).WREADY) {
+      programResult.valid := waddr === (0x80001000L).U
       (0 until 4).foreach( i => {
         when(ports(data).WSTRB(i).asBool) { mem.write(waddr + i.U, ports(data).WDATA(7 + 8*i, 8*i)) }
       })
@@ -157,7 +164,7 @@ class testbench extends Module {
   when(programLoader.valid) {
     mem.write(programAddr, programLoader.byte)
     programAddr := programAddr + 1.U
-  } */
+  }
 }
 
 object testbench extends App {

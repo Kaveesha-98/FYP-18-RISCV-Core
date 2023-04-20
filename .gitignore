@@ -29,3 +29,4 @@ verilator-tests/testbench/programs/build
 !vivado/riscv_rob/riscv_rob.srcs/sources_1/imports/FYP-18-RISCV-Core/*.v
 !vivado/riscv_rob/riscv_rob.srcs/sim_1/tb.v
 !verilog_srcs/*.v
+verilator-tests/coretest/testbench

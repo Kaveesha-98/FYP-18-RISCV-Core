@@ -6,6 +6,7 @@ import chisel3._
 import chisel3.util._
 import chisel3.experimental.BundleLiterals._
 import chisel3.experimental.IO
+import pipeline.configuration.coreConfiguration
 
 // definition of all ports can be found here
 
@@ -70,7 +71,7 @@ class fetch(val fifo_size: Int) extends Module {
     */
 
   //register defs
-  val PC = RegInit("h00100000".U(64.W))
+  val PC = RegInit(coreConfiguration.instructionBase.U(64.W))
   val redirect_bit= RegInit(0.U(1.W))
   val handle_fenceI= RegInit(0.U(1.W))
   val clear_cache_req= RegInit(0.U(1.W))
