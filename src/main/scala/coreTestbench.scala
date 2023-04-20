@@ -6,7 +6,7 @@ import chisel3.experimental.IO
 import pipeline.memAccess.AXI
 
 class testbench extends Module {
-  // once reset programLoader will send data from the lowest byte address
+  /* // once reset programLoader will send data from the lowest byte address
   // to the highest defined byte address
   val programLoader = IO(Input(new Bundle {
     val valid = Bool()
@@ -157,7 +157,7 @@ class testbench extends Module {
   when(programLoader.valid) {
     mem.write(programAddr, programLoader.byte)
     programAddr := programAddr + 1.U
-  }
+  } */
 }
 
 object testbench extends App {

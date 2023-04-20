@@ -7,7 +7,7 @@ import chisel3.experimental.BundleLiterals._
 import chisel3.experimental.IO
 
 class core extends Module {
-  val icache = Module(new pipeline.memAccess.cache.iCache)
+  /* val icache = Module(new pipeline.memAccess.cache.iCache)
 
   val iPort = IO(icache.lowLevelMem.cloneType)
 
@@ -141,7 +141,7 @@ class core extends Module {
   // icache informs the fetch unit to start fetching again
   Seq(icache.cachelinesUpdatesResp.fired, fetch.cachelinesUpdatesResp.fired).foreach(
     _ := (icache.cachelinesUpdatesResp.ready && fetch.cachelinesUpdatesResp.ready)
-  )
+  ) */
 }
 
 object core extends App {
