@@ -1,10 +1,12 @@
 import pipeline.fifo._
+import pipeline.ports._
 
 
 import chisel3._
 import chisel3.util._
 import chisel3.experimental.BundleLiterals._
 import chisel3.experimental.IO
+import pipeline.configuration.coreConfiguration
 
 // definition of all ports can be found here
 
@@ -69,7 +71,7 @@ class fetch(val fifo_size: Int) extends Module {
     */
 
   //register defs
-  val PC = RegInit(0.U(64.W))
+  val PC = RegInit(coreConfiguration.instructionBase.U(64.W))
   val redirect_bit= RegInit(0.U(1.W))
   val handle_fenceI= RegInit(0.U(1.W))
   val clear_cache_req= RegInit(0.U(1.W))
@@ -124,7 +126,7 @@ class fetch(val fifo_size: Int) extends Module {
 
   //redirect signal calc
   val redirect = Wire(Bool())
-  redirect := !(toDecode.expected.pc === toDecode.pc) & toDecode.expected.valid
+  redirect := RegNext(!(toDecode.expected.pc === toDecode.pc) & toDecode.expected.valid)
 
   //redirect bit logic
   when(redirect_bit===0.U & PC_fifo.io.deq.valid){
@@ -136,7 +138,7 @@ class fetch(val fifo_size: Int) extends Module {
 
   //PC update logic
   when(redirect_bit===1.U) {
-    PC := toDecode.expected.pc
+    PC := RegNext(toDecode.expected.pc)
   }.elsewhen(is_fenceI) {
     PC := PC_fifo.io.deq.bits + 4.U
   }.elsewhen(cache.req.valid & cache.req.ready) {

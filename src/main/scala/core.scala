@@ -58,9 +58,12 @@ class core extends Module {
     _ := (decode.writeBackResult.ready && rob.commit.ready)
   )
   // these connections are incorrect an need to be fixed
-  decode.writeBackResult.rdAddr := rob.commit.rd
-  decode.writeBackResult.writeBackData := rob.commit.value  
+  decode.writeBackResult.rdAddr := rob.commit.rdAddr
+  decode.writeBackResult.writeBackData := rob.commit.writeBackData
   decode.writeBackResult.robAddr := rob.commit.robAddr
+  decode.writeBackResult.execptionOccured := rob.commit.execptionOccured
+  decode.writeBackResult.mcause := rob.commit.mcause
+  decode.writeBackResult.mepc := rob.commit.mepc
   // opcode is left dangling for the moment
 
   val exec = Module(new pipeline.exec.exec)
@@ -84,6 +87,7 @@ class core extends Module {
   rob.fromDecode.rd := decode.toExec.instruction(11, 7)
   rob.fromDecode.fwdrs1.robAddr := decode.toExec.src1.robAddr
   rob.fromDecode.fwdrs2.robAddr := Mux(decode.toExec.writeData.fromRob, decode.toExec.writeData.robAddr, decode.toExec.src2.robAddr)
+  rob.fromDecode.pc := decode.toExec.pc
 
   // connecting exec results with RoB
   Seq(rob.fromExec.fired, exec.toRob.fired).foreach(
@@ -91,6 +95,8 @@ class core extends Module {
   )
   rob.fromExec.execResult := exec.toRob.execResult
   rob.fromExec.robAddr := exec.toRob.robAddr
+  rob.fromExec.execeptionOccured := exec.toRob.execptionOccured
+  rob.fromExec.mcause := exec.toRob.mcause
 
   val memAccess = Module(new pipeline.memAccess.memAccess)
   val peripheral = IO(memAccess.peripherals.cloneType)
@@ -109,12 +115,12 @@ class core extends Module {
   Seq(rob.fromMem.fired, memAccess.toRob.fired).foreach(
     _ := (rob.fromMem.ready && memAccess.toRob.ready)
   )
-  rob.fromMem.execResult := memAccess.toRob.writeBackData
+  rob.fromMem.writeBackData := memAccess.toRob.writeBackData
   rob.fromMem.robAddr := memAccess.toRob.robAddr
   
   val dcache = Module(new pipeline.memAccess.cache.dCache)
-  val dPort = IO(dcache.lowLevelAXI.cloneType)
-  dPort <> dcache.lowLevelAXI
+  val dPort = IO(dcache.lowLevelMem.cloneType)
+  dPort <> dcache.lowLevelMem
 
   memAccess.dCache <> dcache.pipelineMemAccess
 

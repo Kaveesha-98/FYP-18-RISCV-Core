@@ -68,6 +68,37 @@ class testbench extends Module {
     //Mux(ports(servicing).RVALID && ports(servicing).RREADY && (serviceState === reading), mem.read(readRequest.address + 4.U + i.U), mem.read(readRequest.address + i.U))
   ).reverse)
 
+  val wready, bvalid = RegInit(false.B)
+  val awready = RegInit(true.B)
+  val waddr = Reg(UInt(32.W))
+
+  val programResult = IO(Output(new Bundle {
+    val valid = Bool()
+    val result = UInt(32.W)
+  }))
+  programResult.valid := false.B
+  programResult.result := ports(data).WDATA
+  when(programRunning) {
+    when(ports(data).AWVALID && ports(data).AWREADY) { waddr <= ports(data).AWADDR }
+    .elsewhen(ports(data).WREADY && ports(data).WVALID) { waddr <= waddr + 4.U }
+
+    when(awready) { awready := !ports(data).AWVALID }
+    .otherwise { awready := (ports(data).BVALID && ports(data).BREADY) }
+
+    when(wready) { wready := !(ports(data).WVALID && ports(data).WLAST) }
+    .otherwise { wready := ports(data).AWVALID && ports(data).AWREADY }
+
+    when(bvalid) { bvalid := !ports(data).BREADY }
+    .otherwise { bvalid := ports(data).WLAST && ports(data).WVALID && ports(data).WREADY }
+
+    when(ports(data).WVALID && ports(data).WREADY) {
+      programResult.valid := waddr === (0x80001000L).U
+      (0 until 4).foreach( i => {
+        when(ports(data).WSTRB(i).asBool) { mem.write(waddr + i.U, ports(data).WDATA(7 + 8*i, 8*i)) }
+      })
+    }
+  }
+
   Seq(inst, data).foreach( interface => {
     ports(interface).ARREADY := ((serviceState === waiting) && (servicing === interface) && programRunning)
     ports(interface).RVALID := ((serviceState === reading) && (servicing === interface))
@@ -82,6 +113,11 @@ class testbench extends Module {
     ports(interface).BVALID := false.B
     ports(interface).BRESP := 0.U
   })
+  ports(data).AWREADY := awready
+  ports(data).WREADY := wready
+  ports(data).BID := 0.U
+  ports(data).BVALID := bvalid
+  ports(data).BRESP := 0.U
 
   val testResult = RegInit((new Bundle {
     val valid = Bool()
@@ -98,7 +134,7 @@ class testbench extends Module {
   dut.peripheral.WREADY := wreadyP
   dut.peripheral.BVALID := bvalidP
 
-  when(dut.peripheral.AWVALID && dut.peripheral.AWVALID) { awreadyP := false.B }
+  when(dut.peripheral.AWVALID && dut.peripheral.AWREADY) { awreadyP := false.B }
   .elsewhen(dut.peripheral.BVALID && dut.peripheral.BREADY) { awreadyP := true.B }
 
   when(dut.peripheral.AWVALID && dut.peripheral.AWREADY) { wreadyP := true.B }

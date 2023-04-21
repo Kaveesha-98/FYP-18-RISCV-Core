@@ -273,12 +273,13 @@ class memAccess extends Module{
 
   // peripheral request served
   when(peripheralRequestServed && (responseBuffers(0).free || peripheralRequest.instruction(5).asBool)) { peripheralRequest.free := true.B }
-  val cacheResponseJustified = dCache.resp.bits.byteAlignedData >> dCache.resp.bits.address(2, 0)
+  val cacheResponseJustified = dCache.resp.bits.byteAlignedData >> VecInit.tabulate(8)(i => (8*i).U)(dCache.resp.bits.address(2, 0))
 
   // filling the response buffers
-  when(toRob.fired && !responseBuffers(0).free) {
+  when(responseBuffers(0).free || toRob.fired) {
     // current response in responseBuffers is full
     // buffered response is given priority
+    responseBuffers(0).free := false.B
     when(!responseBuffers(1).free) {
       // clearing buffered response
       responseBuffers(0) := responseBuffers(1)
@@ -323,6 +324,20 @@ class memAccess extends Module{
 
   // after commiting all requests to memory, wait for next access
   when(cleanAllCacheLines.ready && cleanAllCacheLines.fired) { waitingAllReqToFinish := false.B }
+
+  when(reqBuffer.free) {
+    reqBuffer.free := !(fromPipeline.fired && ((entryType === peripheral && !peripheralRequest.free) || (entryType === dramAccess && !dCache.req.ready)))
+    reqBuffer.entryType := entryType
+    reqBuffer.address := fromPipeline.address
+    reqBuffer.instruction := fromPipeline.instruction
+    reqBuffer.robAddr := fromPipeline.robAddr
+    reqBuffer.writeData := fromPipeline.writeData
+  }.otherwise {
+    switch(reqBuffer.entryType){
+      is(peripheral) { reqBuffer.free := peripheralRequest.free }
+      is(dram) { reqBuffer.free := dCache.req.ready }
+    }
+  }
 }
 
 object memAccess extends App {

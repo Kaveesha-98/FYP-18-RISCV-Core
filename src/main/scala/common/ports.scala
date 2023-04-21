@@ -154,10 +154,10 @@ class pullCommitFrmRob extends composableInterface {
   val robAddr       = Input(UInt(robAddrWidth.W))
   val rdAddr        = Input(UInt(5.W))
   val writeBackData = Input(UInt(64.W)) // mtval when exceptionOccured
-  // Additional wires when exception handling is added
-//  val execptionOccured  = Input(Bool())
-//  val mcause            = Input(UInt(64.W))
-//  val mepc              = Input(UInt(64.W))
+  //Additional wires when exception handling is added
+  val execptionOccured  = Input(Bool())
+  val mcause            = Input(UInt(64.W))
+  val mepc              = Input(UInt(64.W))
 } 
 
 /**
@@ -169,11 +169,12 @@ class pullCommitFrmRob extends composableInterface {
 class commitInstruction extends composableInterface {
   val robAddr       = Output(UInt(robAddrWidth.W))
   val rdAddr        = Output(UInt(5.W))
+  val opcode = Output(UInt(7.W))
   val writeBackData = Output(UInt(64.W)) // mtval when exceptionOccured
-  /* Additional wires when exception handling is added
+  // Additional wires when exception handling is added
   val execptionOccured  = Output(Bool())
   val mcause            = Output(UInt(64.W))
-  val mepc              = Output(UInt(64.W)) */
+  val mepc              = Output(UInt(64.W))
 } 
 /*******************************************************************/
 
@@ -228,8 +229,8 @@ class robAllocate extends composableInterface {
     val value = Output(UInt(64.W))
     val robAddr = Input(UInt(robAddrWidth.W))
   }
-  /* Wire added to handle exceptions
-  val pc = Input(UInt(32.W)) // to provide mepc when exception are reported */
+  //Wire added to handle exceptions
+  val pc = Input(UInt(32.W)) // to provide mepc when exception are reported
 }
 
 /**
@@ -302,10 +303,10 @@ val instruction = Input(UInt(32.W))
 class pushExecResultToRob extends composableInterface {
   val robAddr     = Output(UInt(robAddrWidth.W))
   val execResult  = Output(UInt(64.W)) // mtval when exceptionOccured
-  /* Additional wires when exception handling is added
+  // Additional wires when exception handling is added
   val execptionOccured  = Output(Bool())
   val mcause            = Output(UInt(64.W))
-  val mepc              = Output(UInt(64.W)) */
+  //val mepc              = Output(UInt(64.W))
 }
 
 /**
@@ -316,10 +317,9 @@ class pushExecResultToRob extends composableInterface {
 class pullExecResultToRob extends composableInterface {
   val robAddr     = Input(UInt(robAddrWidth.W))
   val execResult  = Input(UInt(64.W)) // mtval when exceptionOccured
-  /* Additional wires when exception handling is added
-  val execptionOccured  = Input(Bool())
+  // Additional wires when exception handling is added
+  val execeptionOccured  = Input(Bool())
   val mcause            = Input(UInt(64.W))
-  val mepc              = Input(UInt(64.W)) */
 }
 /*******************************************************************/
 
