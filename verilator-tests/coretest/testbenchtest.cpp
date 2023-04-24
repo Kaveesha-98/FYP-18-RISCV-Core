@@ -11,6 +11,8 @@
 
 using namespace std;
 
+#define TEST_ALL
+
 void tick(int tickcount, Vtestbench *tb, VerilatedVcdC* tfp){
 	tb->eval();
 	if (tfp){
@@ -50,7 +52,7 @@ int main(int argc, char **argv){
 		Verilated::traceEverOn(true);
 		VerilatedVcdC* tfp = new VerilatedVcdC;
 		tb->trace(tfp, 99);
-		tfp->open(("waveforms/wavefrom_" + test + ".vcd").c_str());
+		tfp->open(("waveforms/" + test + ".vcd").c_str());
 		
 		tb -> reset = 0;
 		for(int i = 0; i < 5; i++){
@@ -69,7 +71,7 @@ int main(int argc, char **argv){
 			tick(++tickcount, tb, tfp);
 		}
 
-		ifstream input(("target_texts/" + test + ".text"), ios::binary);
+		ifstream input(("target_texts/" + test + ".bin"), ios::binary);
 		printf("Running test for %s: ", test.c_str());
 
 		vector<unsigned char> buffer(istreambuf_iterator<char>(input), {});
@@ -83,9 +85,9 @@ int main(int argc, char **argv){
 		}
 		tb -> programLoader_valid = 0;
 		tb -> programRunning = 1;
-		for(int i = 0; i < 5000; i++){
-			if(tb -> results_valid) {
-				if(tb -> results_result == 1) {
+		for(int i = 0; i < 50000; i++){
+			if(tb -> programResult_valid) {
+				if(tb -> programResult_result == 1) {
 					printf("Test successful \n");
 				}else {
 					printf("Program failed at: %d \n", (tb -> results_result) >> 1);
@@ -98,7 +100,7 @@ int main(int argc, char **argv){
 			}
 			tick(++tickcount, tb, tfp);
 		}
-		if (tb -> results_result == 0)
+		if (tb -> programResult_valid == 0)
 			printf("Timeout\n");
 	}
 	#endif
@@ -150,9 +152,10 @@ int main(int argc, char **argv){
 					printf("Program failed at: %d \n", (tb -> results_result) >> 1);
 				}
 				// finishing the last store operation
-				/* for (int i = 0; i < 100; i++) {
+				for (int i = 0; i < 100; i++) {
 					tick(++tickcount, tb, tfp);
-				} */
+				}
+				return 0;
 				break;
 			}
 			tick(++tickcount, tb, tfp);
