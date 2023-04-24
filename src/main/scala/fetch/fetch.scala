@@ -96,7 +96,7 @@ class fetch(val fifo_size: Int) extends Module {
     PC_fifo.reset:=1.U
   }
   when (handle_fenceI === 0.U){
-    handle_fenceI := is_fenceI & toDecode.fired
+    handle_fenceI := is_fenceI & toDecode.fired & !(redirect || redirect_bit ===1.U)
   }.otherwise{
     when (clear_cache_req===0.U & cache_cleared === 0.U & fence_pending===0.U){
       handle_fenceI := 0.U
@@ -104,13 +104,13 @@ class fetch(val fifo_size: Int) extends Module {
   }
 
   when (clear_cache_req===0.U & !handle_fenceI===1.U){
-    clear_cache_req := is_fenceI
+    clear_cache_req := is_fenceI & !(redirect || redirect_bit ===1.U)
   }.elsewhen(updateAllCachelines.fired){
     clear_cache_req := 0.U
   }
 
   when(cache_cleared === 0.U & !handle_fenceI===1.U) {
-    cache_cleared := is_fenceI
+    cache_cleared := is_fenceI & !(redirect || redirect_bit ===1.U)
   }.elsewhen(cachelinesUpdatesResp.fired) {
     cache_cleared := 0.U
   }
@@ -118,7 +118,7 @@ class fetch(val fifo_size: Int) extends Module {
   carryOutFence.ready := fence_pending
 
   when (fence_pending===0.U & !handle_fenceI===1.U){
-    fence_pending:= is_fenceI
+    fence_pending:= is_fenceI & !(redirect || redirect_bit ===1.U)
   }.elsewhen(carryOutFence.fired){
     fence_pending:=0.U
   }
