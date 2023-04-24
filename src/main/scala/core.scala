@@ -135,15 +135,15 @@ class core extends Module {
   )
 
   // dcache informs fetch unit that its cache is clean
-  Seq(dcache.cachesCleaned.fired, fetch.carryOutFence.fired).foreach(
-    _ := (dcache.cachesCleaned.ready && fetch.carryOutFence.ready)
+  Seq(dcache.cachesCleaned.fired, icache.updateAllCachelines.fired).foreach(
+    _ := (dcache.cachesCleaned.ready && icache.updateAllCachelines.ready)
   )
-
+  fetch.carryOutFence.fired := fetch.carryOutFence.ready
   // fetch informs the icache to update its cache lines
-  Seq(fetch.updateAllCachelines.fired, icache.updateAllCachelines.fired).foreach(
+  /* Seq(fetch.updateAllCachelines.fired, icache.updateAllCachelines.fired).foreach(
     _ := (fetch.updateAllCachelines.ready && icache.updateAllCachelines.ready)
-  )
-
+  ) */
+  fetch.updateAllCachelines.fired := fetch.updateAllCachelines.ready
   // icache informs the fetch unit to start fetching again
   Seq(icache.cachelinesUpdatesResp.fired, fetch.cachelinesUpdatesResp.fired).foreach(
     _ := (icache.cachelinesUpdatesResp.ready && fetch.cachelinesUpdatesResp.ready)
