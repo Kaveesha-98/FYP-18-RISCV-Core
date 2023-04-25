@@ -408,26 +408,24 @@ class decode extends Module {
     val csrWriteImmediate = rs1Addr & "h0000_0000_0000_001f".U
     registerFile(rdAddr) := csrReadData
 
-    when(ins(19, 15) =/= 0.U){
-      switch(fun3) {
-        is("b001".U) {
-          csrFile(immediate) := csrWriteData
-        }
-        is("b010".U) {
-          csrFile(immediate) := csrReadData | csrWriteData
-        }
-        is("b011".U) {
-          csrFile(immediate) := csrReadData & ~csrWriteData
-        }
-        is("b101".U) {
-          csrFile(immediate) := csrWriteImmediate
-        }
-        is("b110".U) {
-          csrFile(immediate) := csrReadData | csrWriteImmediate
-        }
-        is("b111".U) {
-          csrFile(immediate) := csrReadData & ~csrWriteImmediate
-        }
+    switch(fun3) {
+      is("b001".U) {
+        csrFile(immediate) := csrWriteData
+      }
+      is("b010".U) {
+        csrFile(immediate) := csrReadData | csrWriteData
+      }
+      is("b011".U) {
+        csrFile(immediate) := csrReadData & ~csrWriteData
+      }
+      is("b101".U) {
+        csrFile(immediate) := csrWriteImmediate
+      }
+      is("b110".U) {
+        csrFile(immediate) := csrReadData | csrWriteImmediate
+      }
+      is("b111".U) {
+        csrFile(immediate) := csrReadData & ~csrWriteImmediate
       }
     }
     csrDone := true.B
