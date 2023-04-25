@@ -70,7 +70,7 @@ class testbench extends Module {
 
   val wready, bvalid = RegInit(false.B)
   val awready = RegInit(true.B)
-  val waddr = Reg(UInt(32.W))
+  val waddr = RegInit(2.U(32.W))
 
   val programResult = IO(Output(new Bundle {
     val valid = Bool()
@@ -78,9 +78,11 @@ class testbench extends Module {
   }))
   programResult.valid := false.B
   programResult.result := ports(data).WDATA
+  val waddrOut = IO(Output(UInt(32.W)))
+  waddrOut := waddr
   when(programRunning) {
-    when(ports(data).AWVALID && ports(data).AWREADY) { waddr <= ports(data).AWADDR }
-    .elsewhen(ports(data).WREADY && ports(data).WVALID) { waddr <= waddr + 4.U }
+    when(ports(data).AWVALID && ports(data).AWREADY) { waddr := Cat(ports(data).AWADDR(31,2), 0.U(2.W)) }
+    .elsewhen(ports(data).WREADY && ports(data).WVALID) { waddr := waddr + 4.U }
 
     when(awready) { awready := !ports(data).AWVALID }
     .otherwise { awready := (ports(data).BVALID && ports(data).BREADY) }

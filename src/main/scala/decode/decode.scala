@@ -156,7 +156,7 @@ class decode extends Module {
   toExec.src2        := decodeIssueBuffer.rs2
   toExec.writeData   := decodeIssueBuffer.write
 
-  fromFetch.ready          := readyOutFetchBuf && !(isFetchBranch && stateRegFetchBuf === fullState)
+  fromFetch.ready          := readyOutFetchBuf && !(isFetchBranch && stateRegFetchBuf === fullState) && fromFetch.expected.valid
   fromFetch.expected.pc    := expectedPC
   fromFetch.expected.valid := !((isFetchBranch && stateRegFetchBuf === fullState) || (branch.isBranch && stateRegDecodeBuf === fullState))
 
@@ -209,13 +209,13 @@ class decode extends Module {
   val robFile = Mem(regCount, UInt(robAddrWidth.W))
 
   /** Setting rs1 properties */
-  when(opcode === auipc.U || opcode === jump.U) {
+  when(opcode === auipc.U || opcode === jump.U || opcode === system.U) {
     rs1.data         := pc
     rs1.robAddr      := 0.U
     valid.rs1Data    := true.B
     valid.rs1RobAddr := false.B
   }
-  when(opcode === load.U || opcode === store.U || opcode === rops.U || opcode === iops.U || opcode === rops32.U || opcode === iops32.U || opcode === cjump.U || opcode === jumpr.U) {
+  when(opcode === load.U || opcode === store.U || opcode === rops.U || opcode === iops.U || opcode === rops32.U || opcode === iops32.U || opcode === cjump.U || opcode === jumpr.U || opcode === amos.U) {
     rs1.data         := registerFile(rs1Addr)
     rs1.robAddr      := robFile(rs1Addr)
     when(stateRegDecodeBuf === fullState) {                                                                   /** Check dependencies in adjacent instrucitons */
@@ -229,12 +229,12 @@ class decode extends Module {
 
   /** Setting rs2 properties */
   when(opcode === jumpr.U) {
-    rs1.data         := pc
-    rs1.robAddr      := 0.U
-    valid.rs1Data    := true.B
-    valid.rs1RobAddr := false.B
+    rs2.data         := pc
+    rs2.robAddr      := 0.U
+    valid.rs2Data    := true.B
+    valid.rs2RobAddr := false.B
   }
-  when(opcode === jump.U) {
+  when(opcode === jump.U || opcode === system.U) {
     rs2.data         := 4.U
     rs2.robAddr      := 0.U
     valid.rs2Data    := true.B
@@ -259,7 +259,7 @@ class decode extends Module {
   }
 
   /** Setting rs2 properties for store instructions */
-  when(opcode === store.U) {
+  when(opcode === store.U || opcode === amos.U) {
     write.data         := registerFile(rs2Addr)
     write.robAddr      := robFile(rs2Addr)
     when(stateRegDecodeBuf === fullState) {                                                                   /** Check dependencies in adjacent instrucitons */
@@ -309,9 +309,9 @@ class decode extends Module {
       }
     }
     is(fullState) {
-//      when(writeBackResult.fired && writeBackResult.execptionOccured) {
-//        stateRegFetchBuf := emptyState
-//      }.otherwise{
+      when(writeBackResult.fired && writeBackResult.execptionOccured) {
+        stateRegFetchBuf := emptyState
+      }.otherwise{
         when(stalled || (isCSR && !csrDone)) {
           validOutFetchBuf := false.B
           readyOutFetchBuf := false.B
@@ -326,7 +326,7 @@ class decode extends Module {
             readyOutFetchBuf := false.B
           }
         }
-//      }
+      }
     }
   }
   /** -------------------------------------------------------------------------------------------------------------------*/
@@ -342,9 +342,9 @@ class decode extends Module {
       }
     }
     is(fullState) {
-//      when(writeBackResult.fired && writeBackResult.execptionOccured) {
-//        stateRegDecodeBuf := emptyState
-//      }.otherwise {
+      when(writeBackResult.fired && writeBackResult.execptionOccured) {
+        stateRegDecodeBuf := emptyState
+      }.otherwise {
         validOutDecodeBuf := true.B
         when(toExec.fired) {
           readyOutDecodeBuf := true.B
@@ -354,7 +354,7 @@ class decode extends Module {
         } otherwise {
           readyOutDecodeBuf := false.B
         }
-//      }
+      }
     }
   }
   /** -------------------------------------------------------------------------------------------------------------------*/
@@ -396,16 +396,18 @@ class decode extends Module {
 
   /** CSR handling */
   /**--------------------------------------------------------------------------------------------------------------------*/
-  isCSR := (opcode === system.U) && (fun3 === "b001".U || fun3 === "b010".U || fun3 === "b011".U || fun3 === "b101".U || fun3 === "b110".U || fun3 === "b111".U)
-  waitToCommit := isCSR && (issueRobBuff =/= commitRobBuf) && !csrDone
+  isCSR := (opcode === system.U) && (fun3 =/= 0.U)
+  waitToCommit := (issueRobBuff =/= commitRobBuf) && !csrDone
 
   val csrFile = Mem(csrRegCount, UInt(dataWidth.W))
+  csrFile("h300".U) := "h0000002200001800".U
 
   when(isCSR && !waitToCommit) {
     val csrReadData  = csrFile(immediate)
     val csrWriteData = registerFile(rs1Addr)
     val csrWriteImmediate = rs1Addr & "h0000_0000_0000_001f".U
-    registerFile(writeBackResult.rdAddr) := csrReadData
+    registerFile(rdAddr) := csrReadData
+    when(ins(19, 15) =/= 0.U){
     switch(fun3) {
       is("b001".U) {
         csrFile(immediate) := csrWriteData
@@ -425,7 +427,7 @@ class decode extends Module {
       is("b111".U) {
         csrFile(immediate) := csrReadData & ~csrWriteImmediate
       }
-    }
+    }}
     csrDone := true.B
   }
 
@@ -434,21 +436,23 @@ class decode extends Module {
   }
   /**--------------------------------------------------------------------------------------------------------------------*/
 
-//  /** Exceptions handling */
-//  /** -------------------------------------------------------------------------------------------------------------------- */
-//  when(writeBackResult.fired && writeBackResult.execptionOccured) {
-//    exception := true.B
-//    csrFile("h341".U) := writeBackResult.mepc
-//    csrFile("h342".U) := writeBackResult.mcause
-//  }
-//
-//  when(exception && fromFetch.fired) {
-//    exception := false.B
-//  }
-//  /**--------------------------------------------------------------------------------------------------------------------*/
+  /** Exceptions handling */
+  /** -------------------------------------------------------------------------------------------------------------------- */
+  when(writeBackResult.fired && writeBackResult.execptionOccured) {
+    exception := true.B
+    csrFile("h341".U) := writeBackResult.mepc
+    csrFile("h342".U) := writeBackResult.mcause
+  }
+
+  when(exception && fromFetch.fired && fromFetch.pc === fromFetch.expected.pc) {
+    exception := false.B
+  }
+  /**--------------------------------------------------------------------------------------------------------------------*/
 
   when(exception) {
     expectedPC := csrFile("h305".U)
+  }.elsewhen(opcode === system.U && fun3 === 0.U && immediate === 770.U ) {
+    expectedPC := csrFile("h341".U)
   }.elsewhen(branch.isBranch && isFetchBranch) {
     expectedPC := targetReg
   }.otherwise {

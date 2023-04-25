@@ -6,7 +6,6 @@ import chisel3._
 import chisel3.util._
 import chisel3.experimental.BundleLiterals._
 import chisel3.experimental.IO
-import pipeline.configuration.coreConfiguration
 
 // definition of all ports can be found here
 
@@ -71,7 +70,7 @@ class fetch(val fifo_size: Int) extends Module {
     */
 
   //register defs
-  val PC = RegInit(coreConfiguration.instructionBase.U(64.W))
+  val PC = RegInit(0.U(64.W))
   val redirect_bit= RegInit(0.U(1.W))
   val handle_fenceI= RegInit(0.U(1.W))
   val clear_cache_req= RegInit(0.U(1.W))
@@ -92,7 +91,7 @@ class fetch(val fifo_size: Int) extends Module {
   toDecode.pc := PC_fifo.io.deq.bits
 
   //fence.I
-  val is_fenceI = (cache.resp.bits(6,2) === "b00011".U) & (cache.resp.bits(14,12) === 1.U) & (cache.resp.valid)
+  val is_fenceI = (toDecode.instruction(6,2) === "b00011".U) & (toDecode.instruction(14,13) === 0.U) & (toDecode.fired)
   when (handle_fenceI===1.U){
     PC_fifo.reset:=1.U
   }
@@ -126,7 +125,7 @@ class fetch(val fifo_size: Int) extends Module {
 
   //redirect signal calc
   val redirect = Wire(Bool())
-  redirect := RegNext(!(toDecode.expected.pc === toDecode.pc) & toDecode.expected.valid)
+  redirect := !(toDecode.expected.pc === toDecode.pc) & toDecode.expected.valid
 
   //redirect bit logic
   when(redirect_bit===0.U & PC_fifo.io.deq.valid){
@@ -138,7 +137,7 @@ class fetch(val fifo_size: Int) extends Module {
 
   //PC update logic
   when(redirect_bit===1.U) {
-    PC := RegNext(toDecode.expected.pc)
+    PC := toDecode.expected.pc
   }.elsewhen(is_fenceI) {
     PC := PC_fifo.io.deq.bits + 4.U
   }.elsewhen(cache.req.valid & cache.req.ready) {
@@ -152,7 +151,7 @@ class fetch(val fifo_size: Int) extends Module {
   updateAllCachelines.ready := clear_cache_req
   cachelinesUpdatesResp.ready := cache_cleared
 
-  when (redirect || redirect_bit===1.U || !cache.resp.valid || !PC_fifo.io.deq.valid || is_fenceI || handle_fenceI===1.U){
+  when (redirect || redirect_bit===1.U || !cache.resp.valid || !PC_fifo.io.deq.valid || handle_fenceI===1.U){
     toDecode.ready := 0.B
   }.otherwise{
     toDecode.ready := 1.B
