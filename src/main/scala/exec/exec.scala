@@ -58,12 +58,15 @@ class exec extends Module {
     val execResult = UInt(64.W)
     val writeData   = UInt(64.W)
     val instruction = UInt(32.W)
+    val mcause = UInt(64.W)
+    val execptionOccured = Bool()
   }).Lit(
     _.waiting -> false.B,
     _.robAddr -> 0.U,
     _.execResult -> 0.U,
     _.writeData   -> 0.U,
-    _.instruction -> 0.U
+    _.instruction -> 0.U,
+    _.execptionOccured -> false.B
   ))
   val passToMem = RegInit(false.B)
   toRob.ready := robPushBuffer.waiting && (robPushBuffer.instruction(6, 2) =/= "b00000".U && robPushBuffer.instruction(6, 2) =/= "b01011".U)
@@ -194,6 +197,7 @@ class exec extends Module {
     robPushBuffer.robAddr := bufferedEntries(0).robAddr
     robPushBuffer.writeData := bufferedEntries(0).writeData
     robPushBuffer.instruction := bufferedEntries(0).instruction
+    robPushBuffer.execptionOccured := bufferedEntries(0).instruction === 115.U
   }
 
   when(robPushBuffer.waiting) {
@@ -209,8 +213,8 @@ class exec extends Module {
   }.otherwise {
     passToMem := !bufferedEntries(0).free && (bufferedEntries(0).instruction(6, 2) === BitPat("b0?0??") && updateCurrentEntry) && (bufferedEntries(0).instruction(6, 2) =/= BitPat("b00011"))
   }
-  toRob.execptionOccured := false.B
-  toRob.mcause := 0.U
+  toRob.execptionOccured := robPushBuffer.execptionOccured
+  toRob.mcause := 11.U
 }
 
 object exec extends App {

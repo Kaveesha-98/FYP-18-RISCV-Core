@@ -156,7 +156,7 @@ class decode extends Module {
   toExec.src2        := decodeIssueBuffer.rs2
   toExec.writeData   := decodeIssueBuffer.write
 
-  fromFetch.ready          := readyOutFetchBuf && !(isFetchBranch && stateRegFetchBuf === fullState)
+  fromFetch.ready          := readyOutFetchBuf && !(isFetchBranch && stateRegFetchBuf === fullState) && fromFetch.expected.valid
   fromFetch.expected.pc    := expectedPC
   fromFetch.expected.valid := !((isFetchBranch && stateRegFetchBuf === fullState) || (branch.isBranch && stateRegDecodeBuf === fullState))
 
@@ -215,7 +215,7 @@ class decode extends Module {
     valid.rs1Data    := true.B
     valid.rs1RobAddr := false.B
   }
-  when(opcode === load.U || opcode === store.U || opcode === rops.U || opcode === iops.U || opcode === rops32.U || opcode === iops32.U || opcode === cjump.U || opcode === jumpr.U) {
+  when(opcode === load.U || opcode === store.U || opcode === rops.U || opcode === iops.U || opcode === rops32.U || opcode === iops32.U || opcode === cjump.U || opcode === jumpr.U || opcode === amos.U) {
     rs1.data         := registerFile(rs1Addr)
     rs1.robAddr      := robFile(rs1Addr)
     when(stateRegDecodeBuf === fullState) {                                                                   /** Check dependencies in adjacent instrucitons */
@@ -229,10 +229,10 @@ class decode extends Module {
 
   /** Setting rs2 properties */
   when(opcode === jumpr.U) {
-    rs1.data         := pc
-    rs1.robAddr      := 0.U
-    valid.rs1Data    := true.B
-    valid.rs1RobAddr := false.B
+    rs2.data         := pc
+    rs2.robAddr      := 0.U
+    valid.rs2Data    := true.B
+    valid.rs2RobAddr := false.B
   }
   when(opcode === jump.U || opcode === system.U) {
     rs2.data         := 4.U
@@ -259,7 +259,7 @@ class decode extends Module {
   }
 
   /** Setting rs2 properties for store instructions */
-  when(opcode === store.U) {
+  when(opcode === store.U || opcode === amos.U) {
     write.data         := registerFile(rs2Addr)
     write.robAddr      := robFile(rs2Addr)
     when(stateRegDecodeBuf === fullState) {                                                                   /** Check dependencies in adjacent instrucitons */
@@ -407,24 +407,27 @@ class decode extends Module {
     val csrWriteData = registerFile(rs1Addr)
     val csrWriteImmediate = rs1Addr & "h0000_0000_0000_001f".U
     registerFile(rdAddr) := csrReadData
-    switch(fun3) {
-      is("b001".U) {
-        csrFile(immediate) := csrWriteData
-      }
-      is("b010".U) {
-        csrFile(immediate) := csrReadData | csrWriteData
-      }
-      is("b011".U) {
-        csrFile(immediate) := csrReadData & ~csrWriteData
-      }
-      is("b101".U) {
-        csrFile(immediate) := csrWriteImmediate
-      }
-      is("b110".U) {
-        csrFile(immediate) := csrReadData | csrWriteImmediate
-      }
-      is("b111".U) {
-        csrFile(immediate) := csrReadData & ~csrWriteImmediate
+
+    when(ins(19, 15) =/= 0.U){
+      switch(fun3) {
+        is("b001".U) {
+          csrFile(immediate) := csrWriteData
+        }
+        is("b010".U) {
+          csrFile(immediate) := csrReadData | csrWriteData
+        }
+        is("b011".U) {
+          csrFile(immediate) := csrReadData & ~csrWriteData
+        }
+        is("b101".U) {
+          csrFile(immediate) := csrWriteImmediate
+        }
+        is("b110".U) {
+          csrFile(immediate) := csrReadData | csrWriteImmediate
+        }
+        is("b111".U) {
+          csrFile(immediate) := csrReadData & ~csrWriteImmediate
+        }
       }
     }
     csrDone := true.B

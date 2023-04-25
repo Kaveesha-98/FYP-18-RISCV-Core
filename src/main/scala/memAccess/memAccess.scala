@@ -101,7 +101,7 @@ class memAccess extends Module{
 
   val cleanAllCacheLines = IO(new composableInterface)
 
-  val waitingAllReqToFinish = RegInit(false.B)
+  val commitFence = RegInit(false.B)
 
   val dram :: peripheral :: Nil = Enum(2)
 
@@ -127,7 +127,7 @@ class memAccess extends Module{
   val dramAccess = (fromPipeline.address >= ramBaseAddress.U) && (fromPipeline.address <= ramHighAddress.U)
   val entryType = Mux(dramAccess, dram, peripheral)
 
-  fromPipeline.ready := reqBuffer.free && !waitingAllReqToFinish
+  fromPipeline.ready := reqBuffer.free && !commitFence
 
   // a request (for dram or peripheral can come from buffer or "fromPipeline" interface)
   // giving request to dCache
@@ -316,15 +316,6 @@ class memAccess extends Module{
   toRob.robAddr := responseBuffers(0).robAddr
   toRob.writeBackData := responseBuffers(0).writeBackData
 
-  carryOutFence.ready := !waitingAllReqToFinish
-  // theoritically when and after this rule is fired there should be no instructions from pipeline until all address spaces are coherent
-  when(carryOutFence.ready && carryOutFence.fired) { waitingAllReqToFinish := true.B }
-
-  cleanAllCacheLines.ready := waitingAllReqToFinish && reqBuffer.free && peripheralRequest.free
-
-  // after commiting all requests to memory, wait for next access
-  when(cleanAllCacheLines.ready && cleanAllCacheLines.fired) { waitingAllReqToFinish := false.B }
-
   when(reqBuffer.free) {
     reqBuffer.free := !(fromPipeline.fired && ((entryType === peripheral && !peripheralRequest.free) || (entryType === dramAccess && !dCache.req.ready)))
     reqBuffer.entryType := entryType
@@ -338,6 +329,15 @@ class memAccess extends Module{
       is(dram) { reqBuffer.free := dCache.req.ready }
     }
   }
+
+  when(!commitFence) {
+    commitFence := carryOutFence.fired
+  }.otherwise {
+    commitFence := !(reqBuffer.free && !peripherals.ARVALID && !peripherals.RREADY && !peripherals.AWVALID && !peripherals.WVALID && peripheralRequest.free && cleanAllCacheLines.fired)
+  }
+  carryOutFence.ready := !commitFence
+
+  cleanAllCacheLines.ready := commitFence && reqBuffer.free && !peripherals.ARVALID && !peripherals.RREADY && !peripherals.AWVALID && !peripherals.WVALID && peripheralRequest.free
 }
 
 object memAccess extends App {

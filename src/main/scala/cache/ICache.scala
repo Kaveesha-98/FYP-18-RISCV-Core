@@ -61,6 +61,7 @@ class iCache(
   // after updateAllCachelines is fired, this should be ready
   // will fire once all cachelines in I$ is updated
   val cachelinesUpdatesResp = IO(new composableInterface)
+  val commitFence = RegInit(false.B)
 
   val pendingInvalidate = RegInit(false.B)
 
@@ -120,7 +121,7 @@ class iCache(
   cache.io.reset := reset
 
   val cacheStalled = cacheMissed || (fromFetch.resp.valid && !fromFetch.resp.ready)
-  when((!cacheMissed && fromFetch.resp.ready) || !results(next).valid) {
+  when((!cacheMissed && (fromFetch.resp.ready || commitFence)) || !results(next).valid) {
     when(results(buffered).valid) { results(next) := results(buffered) }
     .otherwise {
       results(next).valid := requests(servicing).valid
@@ -173,12 +174,17 @@ class iCache(
 
   fromFetch.resp.valid := !cacheMissed && results(next).valid
   fromFetch.resp.bits := results(next).instruction
-  fromFetch.req.ready := !requests(buffered).valid
+  fromFetch.req.ready := !requests(buffered).valid && !commitFence
 
   cache.io.address := requests(next).address
-  cache.io.invalidate_all := false.B
-  updateAllCachelines.ready := false.B
-  cachelinesUpdatesResp.ready := false.B
+  when(!commitFence) {
+    commitFence := updateAllCachelines.fired
+  }.otherwise {
+    commitFence := (Seq(requests, results).flatten.map(_.valid).reduce(_ || _)) || !cachelinesUpdatesResp.fired
+  }
+  updateAllCachelines.ready := !commitFence
+  cachelinesUpdatesResp.ready := !(Seq(requests, results).flatten.map(_.valid).reduce(_ || _)) && commitFence
+  cache.io.invalidate_all := cachelinesUpdatesResp.fired
   // cache misses prompts requests to low level mem
 
   lowLevelMem.ARADDR := Cat(results(next).address(31, 2+iCacheOffsetWidth), 0.U((2+iCacheOffsetWidth).W))

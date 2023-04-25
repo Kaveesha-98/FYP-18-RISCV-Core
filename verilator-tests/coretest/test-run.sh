@@ -32,4 +32,4 @@ g++ -I /usr/share/verilator/include -I obj_dir /usr/share/verilator/include/veri
 
 ./testbench
 
-gtkwave add_trace.vcd
+#gtkwave add_trace.vcd

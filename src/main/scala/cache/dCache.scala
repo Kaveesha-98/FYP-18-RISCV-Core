@@ -67,6 +67,7 @@ class dCache extends Module {
   val lowLevelMem = IO(new AXI)
   val cleanCaches = IO(new composableInterface)
   val cachesCleaned = IO(new composableInterface)
+  val commitFence = RegInit(false.B)
 
 
   // initiating BRAM for cache
@@ -335,7 +336,7 @@ class dCache extends Module {
   pipelineMemAccess.resp.bits.funct3 := results(next).instruction(14, 12)
   pipelineMemAccess.resp.bits.robAddr := results(next).robAddr
 
-  pipelineMemAccess.req.ready := !requests(buffered).valid
+  pipelineMemAccess.req.ready := !requests(buffered).valid && !commitFence
 
   cache.io.address := requests(next).address
 
@@ -370,8 +371,13 @@ class dCache extends Module {
 
   lowLevelMem.BREADY := bready
 
-  cachesCleaned.ready := false.B
-  cleanCaches.ready := false.B
+  when(!commitFence) {
+    commitFence := cleanCaches.fired
+  }.otherwise {
+    commitFence := (Seq(requests, results).flatten.map(_.valid).reduce(_ || _)) || !cachesCleaned.fired
+  }
+  cachesCleaned.ready := !(Seq(requests, results).flatten.map(_.valid).reduce(_ || _)) && commitFence
+  cleanCaches.ready := !commitFence
 }
 
 object dCache extends App {
