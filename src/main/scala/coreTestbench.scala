@@ -4,6 +4,7 @@ import chisel3.util.HasBlackBoxResource
 import chisel3.experimental.BundleLiterals._
 import chisel3.experimental.IO
 import pipeline.memAccess.AXI
+import pipeline.configuration.coreConfiguration
 
 class testbench extends Module {
   // once reset programLoader will send data from the lowest byte address
@@ -16,7 +17,7 @@ class testbench extends Module {
   // transactions with memory get passed only when this is high
   val programRunning = IO(Input(Bool()))
 
-  val mem = SyncReadMem ((1 << 16) , UInt (8.W))
+  val mem = SyncReadMem ((1 << 25) , UInt (8.W))
 
   val waiting :: getReadReq :: reading :: Nil = Enum(3)
   val serviceState = RegInit(waiting)
@@ -39,7 +40,7 @@ class testbench extends Module {
   switch(serviceState){
     is(waiting) {
       when(ports(servicing).ARVALID) {
-        readRequest.address := ports(servicing).ARADDR
+        readRequest.address := ports(servicing).ARADDR - coreConfiguration.ramBaseAddress.U
         readRequest.arlen   := ports(servicing).ARLEN
       }
     }
@@ -81,7 +82,7 @@ class testbench extends Module {
   val waddrOut = IO(Output(UInt(32.W)))
   waddrOut := waddr
   when(programRunning) {
-    when(ports(data).AWVALID && ports(data).AWREADY) { waddr := Cat(ports(data).AWADDR(31,2), 0.U(2.W)) }
+    when(ports(data).AWVALID && ports(data).AWREADY) { waddr := (Cat(ports(data).AWADDR(31,2), 0.U(2.W)) - coreConfiguration.ramBaseAddress.U) }
     .elsewhen(ports(data).WREADY && ports(data).WVALID) { waddr := waddr + 4.U }
 
     when(awready) { awready := !ports(data).AWVALID }
@@ -153,20 +154,38 @@ class testbench extends Module {
   val results = IO(Output(testResult.cloneType))
   results := testResult
 
-  dut.peripheral.ARREADY := false.B
+  val arreadyP = RegInit(true.B)
+  val rvalidP = RegInit(false.B)
+
+  when(dut.peripheral.ARREADY && dut.peripheral.ARVALID) { arreadyP := false.B }
+  .elsewhen(dut.peripheral.RVALID && dut.peripheral.RREADY) { arreadyP := true.B }
+
+  when(dut.peripheral.ARREADY && dut.peripheral.ARVALID) { rvalidP := true.B }
+  .elsewhen(dut.peripheral.RVALID && dut.peripheral.RREADY) { rvalidP := false.B }
+
+  dut.peripheral.ARREADY := arreadyP
   dut.peripheral.BID := 0.U
   dut.peripheral.BRESP := 0.U
   dut.peripheral.RID := 0.U
   dut.peripheral.RRESP := 0.U
-  dut.peripheral.RVALID := false.B
-  dut.peripheral.RLAST := false.B
-  dut.peripheral.RDATA := 0.U
+  dut.peripheral.RVALID := rvalidP
+  dut.peripheral.RLAST := true.B
+  dut.peripheral.RDATA := 8.U
 
   val programAddr = RegInit(0.U(32.W))
   when(programLoader.valid) {
     mem.write(programAddr, programLoader.byte)
     programAddr := programAddr + 1.U
   }
+  val waddrP = Reg(UInt(32.W))
+  when(dut.peripheral.AWVALID && dut.peripheral.AWREADY) { waddrP := dut.peripheral.AWADDR }
+
+  val uart = IO(Output(new Bundle {
+    val valid = Bool()
+    val character = UInt(8.W)
+  }))
+  uart.valid := (waddrP === (0xE0000030L).U) && dut.peripheral.AWVALID && dut.peripheral.AWREADY
+  uart.character := dut.peripheral.WDATA(7,0)
 }
 
 object testbench extends App {

@@ -317,7 +317,7 @@ class memAccess extends Module{
   toRob.writeBackData := responseBuffers(0).writeBackData
 
   when(reqBuffer.free) {
-    reqBuffer.free := !(fromPipeline.fired && ((entryType === peripheral && !peripheralRequest.free) || (entryType === dramAccess && !dCache.req.ready)))
+    reqBuffer.free := !(fromPipeline.fired && ((entryType === peripheral && !peripheralRequest.free) || (entryType === dram && !dCache.req.ready)))
     reqBuffer.entryType := entryType
     reqBuffer.address := fromPipeline.address
     reqBuffer.instruction := fromPipeline.instruction

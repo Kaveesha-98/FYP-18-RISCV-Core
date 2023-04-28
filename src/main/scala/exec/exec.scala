@@ -192,7 +192,7 @@ class exec extends Module {
 
   val memAddress = bufferedEntries(0).src1 + bufferedEntries(0).src2
 
-  when(updateCurrentEntry) {
+  when(updateCurrentEntry && ((!robPushBuffer.waiting || toRob.fired) && (!passToMem || toMemory.fired))) {
     robPushBuffer.execResult := execResult
     robPushBuffer.robAddr := bufferedEntries(0).robAddr
     robPushBuffer.writeData := bufferedEntries(0).writeData
