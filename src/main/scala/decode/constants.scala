@@ -29,11 +29,21 @@ object constants {
   val dataWidth = 64
   val insAddrWidth = 32
   val regCount = 32
-  val csrRegCount = 40              // 4096
+  val csrRegCount = 4096
   val rs1Width = 5
   val rs2Width = 5
   val rdWidth = 5
   val opcodeWidth = 7
 
   val initialPC = coreConfiguration.instructionBase - 4      // h80000000 - 4
+
+  val MMODE = "h0000002200000000"
+  val HMODE = "b01"
+  val SMODE = "b10"
+  val UMODE = "h0000002200001800"
+
+  val MEPC = "h341"
+  val MCAUSE = "h342"
+  val MSTATUS = "h300"
+  val MTVEC = "h305"
 }

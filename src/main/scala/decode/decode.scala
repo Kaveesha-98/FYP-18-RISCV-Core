@@ -64,6 +64,8 @@ class decode extends Module {
     _.immediate     -> 0.U
   ))
 
+  val currentPrivilege = RegInit(MMODE.U(64.W))
+
   /** Initializing some intermediate wires */
   val opcode  = WireDefault(0.U(opcodeWidth.W))
   val rs1Addr = WireDefault(0.U(rs1Width.W))
@@ -400,14 +402,15 @@ class decode extends Module {
   waitToCommit := (issueRobBuff =/= commitRobBuf) && !csrDone
 
   val csrFile = Mem(csrRegCount, UInt(dataWidth.W))
-  csrFile("h300".U) := "h0000002200001800".U
+
+  csrFile(MSTATUS.U) := (csrFile(MSTATUS.U) & "h0000000000001800".U) | "h0000002200000000".U
 
   when(isCSR && !waitToCommit) {
     val csrReadData  = csrFile(immediate)
     val csrWriteData = registerFile(rs1Addr)
     val csrWriteImmediate = rs1Addr & "h0000_0000_0000_001f".U
     registerFile(rdAddr) := csrReadData
-    when(ins(19, 15) =/= 0.U){
+
     switch(fun3) {
       is("b001".U) {
         csrFile(immediate) := csrWriteData
@@ -427,7 +430,7 @@ class decode extends Module {
       is("b111".U) {
         csrFile(immediate) := csrReadData & ~csrWriteImmediate
       }
-    }}
+    }
     csrDone := true.B
   }
 
@@ -440,8 +443,14 @@ class decode extends Module {
   /** -------------------------------------------------------------------------------------------------------------------- */
   when(writeBackResult.fired && writeBackResult.execptionOccured) {
     exception := true.B
-    csrFile("h341".U) := writeBackResult.mepc
-    csrFile("h342".U) := writeBackResult.mcause
+    csrFile(MEPC.U) := writeBackResult.mepc
+    when(currentPrivilege === MMODE.U) {
+      csrFile(MCAUSE.U) := writeBackResult.mcause
+    }.otherwise {
+      csrFile(MCAUSE.U) := writeBackResult.mcause - 3.U
+    }
+    csrFile(MSTATUS.U) := currentPrivilege
+    currentPrivilege := MMODE.U
   }
 
   when(exception && fromFetch.fired && fromFetch.pc === fromFetch.expected.pc) {
@@ -450,9 +459,13 @@ class decode extends Module {
   /**--------------------------------------------------------------------------------------------------------------------*/
 
   when(exception) {
-    expectedPC := csrFile("h305".U)
+    expectedPC := csrFile(MTVEC.U)
   }.elsewhen(opcode === system.U && fun3 === 0.U && immediate === 770.U ) {
-    expectedPC := csrFile("h341".U)
+    currentPrivilege := csrFile(MSTATUS.U)
+    expectedPC := csrFile(MEPC.U)
+    when(fromFetch.fired && fromFetch.pc === fromFetch.expected.pc) {
+      csrFile(MSTATUS.U) := UMODE.U
+    }
   }.elsewhen(branch.isBranch && isFetchBranch) {
     expectedPC := targetReg
   }.otherwise {
