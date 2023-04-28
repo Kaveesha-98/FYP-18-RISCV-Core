@@ -36,4 +36,14 @@ object constants {
   val opcodeWidth = 7
 
   val initialPC = coreConfiguration.instructionBase - 4      // h80000000 - 4
+
+  val MMODE = "h0000002200000000"
+  val HMODE = "b01"
+  val SMODE = "b10"
+  val UMODE = "h0000002200001800"
+
+  val MEPC = "h341"
+  val MCAUSE = "h342"
+  val MSTATUS = "h300"
+  val MTVEC = "h305"
 }
