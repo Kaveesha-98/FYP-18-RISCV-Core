@@ -5,6 +5,7 @@ import chisel3.experimental.BundleLiterals._
 import chisel3.experimental.IO
 import pipeline.memAccess.AXI
 import pipeline.configuration.coreConfiguration
+import java.io.ObjectOutputStream.PutField
 
 class testbench extends Module {
   // once reset programLoader will send data from the lowest byte address
@@ -95,7 +96,7 @@ class testbench extends Module {
     .otherwise { bvalid := ports(data).WLAST && ports(data).WVALID && ports(data).WREADY }
 
     when(ports(data).WVALID && ports(data).WREADY) {
-      programResult.valid := waddr === (0x80001000L).U
+      programResult.valid := waddr === (0x00001000L).U
       (0 until 4).foreach( i => {
         when(ports(data).WSTRB(i).asBool) { mem.write(waddr + i.U, ports(data).WDATA(7 + 8*i, 8*i)) }
       })
@@ -186,6 +187,12 @@ class testbench extends Module {
   }))
   uart.valid := (waddrP === (0xE0000030L).U) && dut.peripheral.AWVALID && dut.peripheral.AWREADY
   uart.character := dut.peripheral.WDATA(7,0)
+
+  val execOut = IO(Output(dut.execOut.cloneType))
+  execOut := dut.execOut
+
+  val fetchOut = IO(Output(dut.fetchOut.cloneType))
+  fetchOut := dut.fetchOut
 }
 
 object testbench extends App {
