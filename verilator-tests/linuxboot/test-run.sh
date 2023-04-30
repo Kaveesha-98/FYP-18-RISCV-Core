@@ -65,6 +65,8 @@ cd ..
 
 g++ -I /usr/share/verilator/include -I obj_dir /usr/share/verilator/include/verilated.cpp /usr/share/verilator/include/verilated_vcd_c.cpp testbenchtest.cpp obj_dir/Vtestbench__ALL.a -o testbench
 
+clear
+
 ./testbench
 
 #gtkwave add_trace.vcd

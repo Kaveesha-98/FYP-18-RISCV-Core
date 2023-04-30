@@ -406,10 +406,10 @@ class decode extends Module {
   csrFile(MSTATUS.U) := (csrFile(MSTATUS.U) & "h0000000000001800".U) | "h0000002200000000".U
 
   when(isCSR && !waitToCommit) {
-    val csrReadData  = csrFile(immediate)
+    val csrReadData  = Mux(immediate === "h301".U , "h101101".U, csrFile(immediate))
     val csrWriteData = registerFile(rs1Addr)
     val csrWriteImmediate = rs1Addr & "h0000_0000_0000_001f".U
-    registerFile(rdAddr) := csrReadData
+    when(rdAddr =/= 0.U) {registerFile(rdAddr) := csrReadData}
 
     switch(fun3) {
       is("b001".U) {

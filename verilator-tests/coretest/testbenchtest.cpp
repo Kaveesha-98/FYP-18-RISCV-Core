@@ -85,7 +85,7 @@ int main(int argc, char **argv){
 		}
 		tb -> programLoader_valid = 0;
 		tb -> programRunning = 1;
-		for(int i = 0; i < 50000; i++){
+		for(int i = 0; i < 5000; i++){
 			if(tb -> programResult_valid) {
 				if(tb -> programResult_result == 1) {
 					printf("Test successful \n");

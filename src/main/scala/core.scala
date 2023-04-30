@@ -148,6 +148,28 @@ class core extends Module {
   Seq(icache.cachelinesUpdatesResp.fired, fetch.cachelinesUpdatesResp.fired).foreach(
     _ := (icache.cachelinesUpdatesResp.ready && fetch.cachelinesUpdatesResp.ready)
   )
+
+  val execOut = IO(Output(new Bundle {
+    val fired = Bool()
+    val instruction = UInt(32.W)
+    val pc = UInt(64.W)
+    val src1 = UInt(64.W)
+    val src2 = UInt(64.W)
+    val writeData = UInt(64.W)
+  }))
+  execOut.fired := exec.fromIssue.fired
+  execOut.instruction := exec.fromIssue.instruction
+  execOut.pc := decode.toExec.pc
+  execOut.src1 := exec.fromIssue.src1
+  execOut.src2 := exec.fromIssue.src2
+  execOut.writeData := exec.fromIssue.writeData
+
+  val fetchOut = IO(Output(new Bundle {
+    val fired = Bool()
+    val pc = UInt(64.W)
+  }))
+  fetchOut.fired := fetch.toDecode.fired
+  fetchOut.pc := fetch.toDecode.pc
 }
 
 object core extends App {

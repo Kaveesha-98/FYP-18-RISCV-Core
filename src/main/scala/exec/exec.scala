@@ -151,6 +151,32 @@ class exec extends Module {
     val src1 = bufferedEntries(0).src1
     val src2 = bufferedEntries(0).src2
     val addSub64 = VecInit(src1 + src2, src1 - src2)
+
+    val result64M = VecInit.tabulate(8)(i => i match {
+        case 0 => (src1.asSInt * src2.asSInt).asUInt // mul
+        case 1 => (src1.asSInt * src2.asSInt)(127, 64).asUInt // mulh
+        case 2 => (Cat(src1(63), src1).asSInt * Cat(0.U(1.W) ,src2).asSInt)(127, 64).asUInt // mulhsu
+        case 3 => (src1 * src2)(127, 64) // mulhu
+        case 4 => Mux(src2 === 0.U, ~(0.U(64.W)), (src1.asSInt / src2.asSInt).asUInt) // div
+        case 5 => Mux(src2 === 0.U, ~(0.U(64.W)), (src1 / src2))// divu
+        case 6 => (src1.asSInt - Mux(src2 === 0.U, (-1).S(64.W), (src1.asSInt / src2.asSInt))*(src2.asSInt) ).asUInt  // rem
+        case 7 => (src1 - Mux(src2 === 0.U, ~(0.U(64.W)), (src1 / src2))*(src2) ) // remu
+      })(instruction(14, 12))
+
+      val src1W = src1(31,0)
+      val src2W = src2(31,0)
+      val result32MW = VecInit.tabulate(8)(i => i match {
+        case 0 => (src1W.asSInt * src2W.asSInt)(31,0).asUInt // mulw
+        case 1 => 0.U // not defined
+        case 2 => 0.U // not defined
+        case 3 => 0.U // not defined
+        case 4 => Mux(src2W === 0.U, ~(0.U(32.W)), (src1W.asSInt / src2W.asSInt).asUInt)(31,0)  // divw
+        case 5 => Mux(src2W === 0.U, ~(0.U(64.W)), (src1W / src2W))(31,0) // divuw
+        case 6 => ((src1W.asSInt - Mux(src2W === 0.U, (-1).S(32.W), (src1W.asSInt / src2W.asSInt))*(src2W.asSInt) ).asUInt)(31,0) // remw
+        case 7 => (src1W - Mux(src2W === 0.U, ~(0.U(32.W)), (src1W / src2W))*(src2W) )(31,0)  // remuw
+      })(instruction(14, 12))
+      val result32M = Cat(Fill(32, result32MW(31)), result32MW)
+
     /**
         * 64 bit operations, indexed with funct3, op-imm, op
         */
@@ -184,9 +210,9 @@ class exec extends Module {
       case 1 => (src2 + 4.U) // jal link address
       case 2 => (src1 + src2) //(63, 0) // filler
       case 3 => Mux(instruction(6).asBool, (src1 + src2), src1) //(63, 0) jalr link address
-      case 4 => arithmetic64 // (63, 0) op-imm, op
+      case 4 => Mux(instruction === BitPat("b0000001??????????????????0110011"), result64M, arithmetic64) // (63, 0) op-imm, op
       case 5 => (src2 + Mux(instruction(5).asBool, 0.U, src1)) // (63, 0) // lui and auipc
-      case 6 => arithmetic32 // op-32, op-imm-32
+      case 6 => Mux(instruction === BitPat("b0000001??????????????????0111011"), result32M, arithmetic32) // op-32, op-imm-32
     })(instruction(4, 2))
   }
 
