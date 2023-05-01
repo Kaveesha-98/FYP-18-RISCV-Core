@@ -117,7 +117,7 @@ class fetch(val fifo_size: Int) extends Module {
 
 
   // initialize BHT and fifo buffer
-  val predictor = Module(new predictor(32))
+  val predictor = Module(new predictor(512))
   predictor.io.branchres <> branchRes
   predictor.io.curr_pc := PC
   val PC_fifo = Module(new regFifo(UInt(128.W), fifo_size))
