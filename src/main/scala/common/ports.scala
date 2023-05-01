@@ -114,8 +114,8 @@ class recivInstrFrmFetch extends composableInterface {
 class branchResFrmDecode extends composableInterface {
   val isBranch      = Output(Bool()) // this signal was added to account for dynamic changes in instruction memory(This one might not be needed)
   val branchTaken   = Output(Bool())
-  val pc            = Output(UInt(32.W)) // pc of the branched instruction
-  val pcAfterBrnach = Output(UInt(32.W)) // pc of the next instruction after branch
+  val pc            = Output(UInt(64.W)) // pc of the branched instruction
+  val pcAfterBrnach = Output(UInt(64.W)) // pc of the next instruction after branch
 }
 
 /**
@@ -126,8 +126,8 @@ class branchResFrmDecode extends composableInterface {
 class branchResToFetch extends composableInterface {
   val isBranch      = Input(Bool()) // this signal was added to account for dynamic changes in instruction memory(This one might not be needed)
   val branchTaken   = Input(Bool())
-  val pc            = Input(UInt(32.W)) // pc of the branched instruction
-  val pcAfterBrnach = Input(UInt(32.W)) // pc of the next instruction after branch
+  val pc            = Input(UInt(64.W)) // pc of the branched instruction
+  val pcAfterBrnach = Input(UInt(64.W)) // pc of the next instruction after branch
 }
 
 /*******************************************************************/

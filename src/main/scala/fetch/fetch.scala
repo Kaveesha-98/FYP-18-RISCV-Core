@@ -1,11 +1,10 @@
 import pipeline.fifo._
 import pipeline.ports._
-
-
 import chisel3._
 import chisel3.util._
 import chisel3.experimental.BundleLiterals._
 import chisel3.experimental.IO
+import firrtl.Utils.False
 
 // definition of all ports can be found here
 
@@ -26,13 +25,48 @@ import chisel3.experimental.IO
   *
   * additional information on ports can be found on common/ports.scala
   */
-class predictor extends Module {
+class predictor(val depth: Int) extends Module {
   val io = IO(new Bundle {
     val branchres = new branchResToFetch
     val curr_pc = Input(UInt(64.W))
     val next_pc = Output(UInt(64.W))
   })
-  io.next_pc := io.curr_pc + 4.U
+
+  // Extract addresses and indexes
+  val btb_addr = io.curr_pc(log2Down(depth) + 1, 2)
+  val tag = io.curr_pc(63, log2Down(depth) + 2)
+  val result_addr = io.branchres.pc(log2Down(depth) + 1, 2)
+  val result_tag = io.branchres.pc(63, log2Down(depth) + 2)
+
+  // Define tables and valid bits
+  val btb = Mem(depth, UInt(64.W))
+  val counters = Mem(depth, UInt(2.W))
+  val valid_bits = RegInit(VecInit(Seq.fill(depth)(0.U(1.W))))
+  val tag_store = Mem(depth, UInt((62-log2Down(depth)).W))
+
+  // Update btb ,counters and valid bits
+  when(io.branchres.fired){
+    when(io.branchres.isBranch) {
+      valid_bits(result_addr) := 1.U
+      tag_store(result_addr) := result_tag
+      btb(result_addr) := io.branchres.pcAfterBrnach
+      // Update counters
+      when(io.branchres.branchTaken){
+        when(!(counters(result_addr) === 3.U)){
+          counters(result_addr) := counters(result_addr) + 1.U
+        }
+      }.otherwise{
+        when(!(counters(result_addr) === 0.U)) {
+          counters(result_addr) := counters(result_addr) - 1.U
+        }
+      }
+    }.otherwise{
+      valid_bits(result_addr) := 0.U
+    }
+  }
+
+  io.next_pc := Mux(valid_bits(btb_addr)===1.U && tag_store(btb_addr) === tag && counters(btb_addr)(1) === 1.U, btb(btb_addr), io.curr_pc + 4.U)
+
   io.branchres.ready := 1.B
 }
 
@@ -69,6 +103,10 @@ class fetch(val fifo_size: Int) extends Module {
     * Internal of the module goes here
     */
 
+  //redirect signal calc
+  val redirect = Wire(Bool())
+  redirect := !(toDecode.expected.pc === toDecode.pc) & toDecode.expected.valid
+
   //register defs
   val PC = RegInit(0.U(64.W))
   val redirect_bit= RegInit(0.U(1.W))
@@ -79,7 +117,7 @@ class fetch(val fifo_size: Int) extends Module {
 
 
   // initialize BHT and fifo buffer
-  val predictor = Module(new predictor)
+  val predictor = Module(new predictor(32))
   predictor.io.branchres <> branchRes
   predictor.io.curr_pc := PC
   val PC_fifo = Module(new regFifo(UInt(128.W), fifo_size))
@@ -123,9 +161,6 @@ class fetch(val fifo_size: Int) extends Module {
     fence_pending:=0.U
   }
 
-  //redirect signal calc
-  val redirect = Wire(Bool())
-  redirect := !(toDecode.expected.pc === toDecode.pc) & toDecode.expected.valid
 
   //redirect bit logic
   when(redirect_bit===0.U & PC_fifo.io.deq.valid){
@@ -161,6 +196,6 @@ class fetch(val fifo_size: Int) extends Module {
   //printf(p"${cache} ${updateAllCachelines} ${cachelinesUpdatesResp} ${carryOutFence} ${fence_pending}\n")
 }
 
-object Verilog extends App {
+object fetchVerilog extends App {
   (new chisel3.stage.ChiselStage).emitVerilog(new fetch(4))
 }
