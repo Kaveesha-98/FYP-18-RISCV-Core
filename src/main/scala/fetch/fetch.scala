@@ -61,7 +61,9 @@ class predictor(val depth: Int) extends Module {
         }
       }
     }.otherwise{
-      valid_bits(result_addr) := 0.U
+      when(io.branchres.branchTaken){
+        valid_bits(result_addr) := 0.U
+      }
     }
   }
 
@@ -117,7 +119,7 @@ class fetch(val fifo_size: Int) extends Module {
 
 
   // initialize BHT and fifo buffer
-  val predictor = Module(new predictor(512))
+  val predictor = Module(new predictor(256))
   predictor.io.branchres <> branchRes
   predictor.io.curr_pc := PC
   val PC_fifo = Module(new regFifo(UInt(128.W), fifo_size))
