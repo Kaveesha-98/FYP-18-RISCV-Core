@@ -18,3 +18,4 @@ cpu-test/cpuTestbench
 *.f
 verilator-tests/dCache/dCache
 verilator-tests/testbench/testbench
+vivado/*
