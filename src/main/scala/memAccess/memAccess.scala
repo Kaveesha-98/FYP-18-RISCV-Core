@@ -124,6 +124,7 @@ class memAccess extends Module{
     _.instruction   -> 0.U
 	))
 
+//  val dramAccess = fromPipeline.address(31,0) =/= BitPat("b1110????????????????????????????")
   val dramAccess = (fromPipeline.address >= ramBaseAddress.U) && (fromPipeline.address <= ramHighAddress.U)
   val entryType = Mux(dramAccess, dram, peripheral)
 

@@ -142,3 +142,9 @@ class regFifo[T <: Data ]( gen: T, depth: Int) extends Fifo(gen:
   val isEmpty = IO(Output(Bool()))
   isEmpty := emptyReg
 }
+
+class rasFifo [T <: Data ]( gen: T, depth: Int) extends regFifo(gen: T, depth: Int){
+  val full = IO(Output(Bool()))
+  full := fullReg
+}
+

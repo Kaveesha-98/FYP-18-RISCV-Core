@@ -171,7 +171,9 @@ class testbench extends Module {
   dut.peripheral.RRESP := 0.U
   dut.peripheral.RVALID := rvalidP
   dut.peripheral.RLAST := true.B
+
   dut.peripheral.RDATA := 8.U
+
 
   val programAddr = RegInit(0.U(32.W))
   when(programLoader.valid) {
@@ -191,8 +193,18 @@ class testbench extends Module {
   val execOut = IO(Output(dut.execOut.cloneType))
   execOut := dut.execOut
 
-  val fetchOut = IO(Output(dut.fetchOut.cloneType))
-  fetchOut := dut.fetchOut
+  val branchOut = IO(Output(dut.branchOut.cloneType))
+  branchOut := dut.branchOut
+//
+//  val fetchOut = IO(Output(dut.fetchOut.cloneType))
+//  fetchOut := dut.fetchOut
+//
+//  val robOut = IO(Output(dut.robOut.cloneType))
+//  robOut := dut.robOut
+//
+//  val regOut = IO(Output(dut.regOut.cloneType))
+//  regOut := dut.regOut
+
 }
 
 object testbench extends App {
