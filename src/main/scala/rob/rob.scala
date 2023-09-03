@@ -51,7 +51,7 @@ class rob extends Module {
   fromDecode.fwdrs2.valid := results.forward2.data(0)
 
   // fence ready
-  val is_fence = commit.opcode === "b0001111".U
+  val is_fence = commit.opcode === "b0001111".U && !fifo.isEmpty
   carryOutFence.ready := is_fence
 
   // write results from exec

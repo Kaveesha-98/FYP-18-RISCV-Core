@@ -32,6 +32,8 @@ object utils {
     val branchTaken = Output(Bool())
     val pc = Output(UInt(32.W))
     val pcAfterBrnach = Output(UInt(32.W))
+    val isRas = Output(Bool())
+    val rasAction = Output(UInt(2.W))
   }
 
   def getInsType(opcode: UInt): UInt = {

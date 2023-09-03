@@ -6,9 +6,9 @@ module iCacheRegisters #(
   localparam block_size = 1 << offset_width
 ) (
   input [31:0] address,
-  output [31:0] instruction,
-  output [tag_width-1: 0] tag,
-  output tag_valid,
+  output reg [31:0] instruction,
+  output reg [tag_width-1: 0] tag,
+  output reg tag_valid,
   input [line_width-1:0] write_line_index,
   input [32*block_size - 1:0] write_block,
   input [tag_width-1: 0] write_tag,
@@ -19,9 +19,15 @@ module iCacheRegisters #(
   reg [tag_width-1:0] tags [cache_depth-1:0];
   reg validBits [cache_depth-1:0];
 
-  assign instruction = cache[address[line_width+offset_width+2-1:offset_width+2]][address[offset_width+2-1:2]];
-  assign tag = tags[address[line_width+offset_width+2-1:offset_width+2]];
-  assign tag_valid = validBits[address[line_width+offset_width+2-1:offset_width+2]];
+  always@(posedge clock) begin
+    instruction <= cache[address[line_width+offset_width+2-1:offset_width+2]][address[offset_width+2-1:2]];
+    tag <= tags[address[line_width+offset_width+2-1:offset_width+2]];
+    tag_valid <= validBits[address[line_width+offset_width+2-1:offset_width+2]];
+  end
+
+  /* assign instruction = cache[address[line_width+offset_width+2-1:offset_width+2]][address[offset_width+2-1:2]];
+  assign tag = tags[address[line_width+offset_width+2-1:offset_width+2]]; */
+  // assign tag_valid = validBits[address[line_width+offset_width+2-1:offset_width+2]];
 
   always @(posedge clock) begin
     if (reset || invalidate_all) begin

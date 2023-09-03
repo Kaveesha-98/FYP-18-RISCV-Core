@@ -24,15 +24,15 @@ class pushToMemory extends composableInterface {
   val instruction = Output(UInt(32.W))
 }
 
-class pushExecResultToRob extends composableInterface {
+/* class pushExecResultToRob extends composableInterface {
   val robAddr     = Output(UInt(robAddrWidth.W))
   val execResult  = Output(UInt(64.W))
-}
+} */
 
 class exec extends Module {
 
   val toMemory  = IO(new pushToMemory)
-  val memReqBuffer = RegInit((new Bundle{
+  /* val memReqBuffer = RegInit((new Bundle{
     val waiting     = Bool()
     val robAddr     = UInt(robAddrWidth.W)
     val memAddress  = UInt(64.W)
@@ -49,21 +49,35 @@ class exec extends Module {
   toMemory.robAddr      := memReqBuffer.robAddr
   toMemory.memAddress   := memReqBuffer.memAddress
   toMemory.writeData    := memReqBuffer.writeData
-  toMemory.instruction  := memReqBuffer.instruction
+  toMemory.instruction  := memReqBuffer.instruction */
 
   val toRob     = IO(new pushExecResultToRob)
   val robPushBuffer = RegInit((new Bundle{
     val waiting = Bool()
     val robAddr = UInt(robAddrWidth.W)
     val execResult = UInt(64.W)
+    val writeData   = UInt(64.W)
+    val instruction = UInt(32.W)
+    val mcause = UInt(64.W)
+    val execptionOccured = Bool()
   }).Lit(
     _.waiting -> false.B,
     _.robAddr -> 0.U,
-    _.execResult -> 0.U
+    _.execResult -> 0.U,
+    _.writeData   -> 0.U,
+    _.instruction -> 0.U,
+    _.execptionOccured -> false.B
   ))
-  toRob.ready := robPushBuffer.waiting
+  val passToMem = RegInit(false.B)
+  toRob.ready := robPushBuffer.waiting && (robPushBuffer.instruction(6, 2) =/= "b00000".U && robPushBuffer.instruction(6, 2) =/= "b01011".U)
   toRob.robAddr := robPushBuffer.robAddr
   toRob.execResult := robPushBuffer.execResult
+
+  toMemory.ready        := passToMem
+  toMemory.robAddr      := robPushBuffer.robAddr
+  toMemory.memAddress   := robPushBuffer.execResult
+  toMemory.writeData    := robPushBuffer.writeData
+  toMemory.instruction  := robPushBuffer.instruction 
 
   val fromIssue = IO(new pullToPipeline)
 
@@ -108,8 +122,7 @@ class exec extends Module {
   /* val updateCurrentEntry = (bufferedEntries(0).instruction(6, 2) =/= BitPat("b0?000") && (!robPushBuffer.waiting || toRob.fired)) ||
     (bufferedEntries(0).instruction(6, 2) === BitPat("b0?000") && (!memReqBuffer.waiting || toMemory.fired)) */
   val updateCurrentEntry = (bufferedEntries(0).free ||
-    (bufferedEntries(0).instruction(6, 2) =/= BitPat("b0?000") && (!robPushBuffer.waiting || toRob.fired)) ||
-    (bufferedEntries(0).instruction(6, 2) === BitPat("b0?000") && (!memReqBuffer.waiting || toMemory.fired)))
+    ((!robPushBuffer.waiting || toRob.fired) && (!passToMem || toMemory.fired)))
 
   when(updateCurrentEntry) {
     bufferedEntries(0) := nextExecutingEntry
@@ -137,6 +150,33 @@ class exec extends Module {
     val instruction = bufferedEntries(0).instruction
     val src1 = bufferedEntries(0).src1
     val src2 = bufferedEntries(0).src2
+    val addSub64 = VecInit(src1 + src2, src1 - src2)
+
+    val result64M = VecInit.tabulate(8)(i => i match {
+        case 0 => (src1.asSInt * src2.asSInt).asUInt // mul
+        case 1 => (src1.asSInt * src2.asSInt)(127, 64).asUInt // mulh
+        case 2 => (Cat(src1(63), src1).asSInt * Cat(0.U(1.W) ,src2).asSInt)(127, 64).asUInt // mulhsu
+        case 3 => (src1 * src2)(127, 64) // mulhu
+        case 4 => Mux(src2 === 0.U, ~(0.U(64.W)), (src1.asSInt / src2.asSInt).asUInt) // div
+        case 5 => Mux(src2 === 0.U, ~(0.U(64.W)), (src1 / src2))// divu
+        case 6 => (src1.asSInt - Mux(src2 === 0.U, (-1).S(64.W), (src1.asSInt / src2.asSInt))*(src2.asSInt) ).asUInt  // rem
+        case 7 => (src1 - Mux(src2 === 0.U, ~(0.U(64.W)), (src1 / src2))*(src2) ) // remu
+      })(instruction(14, 12))
+
+      val src1W = src1(31,0)
+      val src2W = src2(31,0)
+      val result32MW = VecInit.tabulate(8)(i => i match {
+        case 0 => (src1W.asSInt * src2W.asSInt)(31,0).asUInt // mulw
+        case 1 => 0.U // not defined
+        case 2 => 0.U // not defined
+        case 3 => 0.U // not defined
+        case 4 => Mux(src2W === 0.U, ~(0.U(32.W)), (src1W.asSInt / src2W.asSInt).asUInt)(31,0)  // divw
+        case 5 => Mux(src2W === 0.U, ~(0.U(64.W)), (src1W / src2W))(31,0) // divuw
+        case 6 => ((src1W.asSInt - Mux(src2W === 0.U, (-1).S(32.W), (src1W.asSInt / src2W.asSInt))*(src2W.asSInt) ).asUInt)(31,0) // remw
+        case 7 => (src1W - Mux(src2W === 0.U, ~(0.U(32.W)), (src1W / src2W))*(src2W) )(31,0)  // remuw
+      })(instruction(14, 12))
+      val result32M = Cat(Fill(32, result32MW(31)), result32MW)
+
     /**
         * 64 bit operations, indexed with funct3, op-imm, op
         */
@@ -167,42 +207,40 @@ class exec extends Module {
     // possible place for resource optimization
     VecInit.tabulate(7)(i => i match {
       case 0 => (src1 + src2) // address calculation for memory access
-      case 1 => (src1 + src2) // jal link address
+      case 1 => (src2 + 4.U) // jal link address
       case 2 => (src1 + src2) //(63, 0) // filler
-      case 3 => (src1 + src2) //(63, 0) jalr link address
-      case 4 => arithmetic64 // (63, 0) op-imm, op
+      case 3 => Mux(instruction(6).asBool, (src1 + src2), src1) //(63, 0) jalr link address
+      case 4 => Mux(instruction === BitPat("b0000001??????????????????0110011"), result64M, arithmetic64) // (63, 0) op-imm, op
       case 5 => (src2 + Mux(instruction(5).asBool, 0.U, src1)) // (63, 0) // lui and auipc
-      case 6 => arithmetic32 // op-32, op-imm-32
+      case 6 => Mux(instruction === BitPat("b0000001??????????????????0111011"), result32M, arithmetic32) // op-32, op-imm-32
     })(instruction(4, 2))
   }
 
   val memAddress = bufferedEntries(0).src1 + bufferedEntries(0).src2
 
-  when(updateCurrentEntry) {
-    when(bufferedEntries(0).instruction(6, 2) === BitPat("b0?000")) {
-      memReqBuffer.robAddr := bufferedEntries(0).robAddr
-      memReqBuffer.memAddress := memAddress
-      memReqBuffer.writeData := bufferedEntries(0).writeData
-      memReqBuffer.instruction := bufferedEntries(0).instruction
-    }.otherwise {
-      robPushBuffer.execResult := execResult
-      robPushBuffer.robAddr := bufferedEntries(0).robAddr
-    }
+  when(updateCurrentEntry && ((!robPushBuffer.waiting || toRob.fired) && (!passToMem || toMemory.fired))) {
+    robPushBuffer.execResult := execResult
+    robPushBuffer.robAddr := bufferedEntries(0).robAddr
+    robPushBuffer.writeData := bufferedEntries(0).writeData
+    robPushBuffer.instruction := bufferedEntries(0).instruction
+    robPushBuffer.execptionOccured := bufferedEntries(0).instruction === 115.U
   }
 
   when(robPushBuffer.waiting) {
     // condition to deassert waiting(if true it has keep on waiting)
-    robPushBuffer.waiting := !toRob.fired || (!bufferedEntries(0).free && (bufferedEntries(0).instruction(6, 2) =/= BitPat("b0?000")))
+    robPushBuffer.waiting := (!toRob.fired || (!bufferedEntries(0).free && (bufferedEntries(0).instruction(6, 2) =/= BitPat("b00000") && bufferedEntries(0).instruction(6, 2) =/= BitPat("b01011")) && (!passToMem || toMemory.fired))) && (bufferedEntries(0).instruction(6, 2) =/= BitPat("b00011"))
   }.otherwise {
     // asserting waiting
-    robPushBuffer.waiting := !bufferedEntries(0).free && (bufferedEntries(0).instruction(6, 2) =/= BitPat("b0?000"))
+    robPushBuffer.waiting := !bufferedEntries(0).free && ((bufferedEntries(0).instruction(6, 2) =/= BitPat("b00000") && bufferedEntries(0).instruction(6, 2) =/= BitPat("b01011")) && updateCurrentEntry) && (bufferedEntries(0).instruction(6, 2) =/= BitPat("b00011"))
   }
 
-  when(memReqBuffer.waiting) {
-    memReqBuffer.waiting := !toMemory.fired || bufferedEntries(0).free || (bufferedEntries(0).instruction(6, 2) =/= BitPat("b0?000"))
+  when(passToMem) {
+    passToMem := (!toMemory.fired || (!bufferedEntries(0).free && (bufferedEntries(0).instruction(6, 2) === BitPat("b0?0??")) && (!robPushBuffer.waiting || toRob.fired))) && (bufferedEntries(0).instruction(6, 2) =/= BitPat("b00011"))
   }.otherwise {
-    memReqBuffer.waiting := !bufferedEntries(0).free && (bufferedEntries(0).instruction(6, 2) === BitPat("b0?000"))
+    passToMem := !bufferedEntries(0).free && (bufferedEntries(0).instruction(6, 2) === BitPat("b0?0??") && updateCurrentEntry) && (bufferedEntries(0).instruction(6, 2) =/= BitPat("b00011"))
   }
+  toRob.execptionOccured := robPushBuffer.execptionOccured
+  toRob.mcause := 11.U
 }
 
 object exec extends App {
