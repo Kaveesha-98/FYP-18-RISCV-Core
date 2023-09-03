@@ -6,9 +6,9 @@ module dCacheRegisters #(
   localparam block_size = 1 << double_word_offset_width // double words per block
 ) (
   input [31:0] address,
-  output [63:0] byte_aligned_data,
-  output [tag_width-1: 0] tag,
-  output tag_valid,
+  output reg [63:0] byte_aligned_data,
+  output reg [tag_width-1: 0] tag,
+  output reg tag_valid,
   input [line_width-1:0] write_line_index,
   input [64*block_size - 1:0] write_block,
   input [tag_width-1: 0] write_tag,
@@ -20,9 +20,14 @@ module dCacheRegisters #(
   reg [tag_width-1:0] tags [cache_depth-1:0];
   reg validBits [cache_depth-1:0];
 
-  assign byte_aligned_data = cache[address[line_width+double_word_offset_width+3-1:double_word_offset_width+3]][address[double_word_offset_width-1 + 3:3]];
+  always @(posedge clock) begin
+    byte_aligned_data <= cache[address[line_width+double_word_offset_width+3-1:double_word_offset_width+3]][address[double_word_offset_width-1 + 3:3]];
+    tag <= tags[address[line_width+double_word_offset_width+3-1:double_word_offset_width+3]];
+    tag_valid <= validBits[address[line_width+double_word_offset_width+3-1:double_word_offset_width+3]];
+  end 
+  /* assign byte_aligned_data = cache[address[line_width+double_word_offset_width+3-1:double_word_offset_width+3]][address[double_word_offset_width-1 + 3:3]];
   assign tag = tags[address[line_width+double_word_offset_width+3-1:double_word_offset_width+3]];
-  assign tag_valid = validBits[address[line_width+double_word_offset_width+3-1:double_word_offset_width+3]];
+  assign tag_valid = validBits[address[line_width+double_word_offset_width+3-1:double_word_offset_width+3]]; */
 
   always @(posedge clock) begin
     if (reset) begin

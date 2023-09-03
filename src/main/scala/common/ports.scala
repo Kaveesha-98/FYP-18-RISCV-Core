@@ -116,6 +116,15 @@ class branchResFrmDecode extends composableInterface {
   val branchTaken   = Output(Bool())
   val pc            = Output(UInt(64.W)) // pc of the branched instruction
   val pcAfterBrnach = Output(UInt(64.W)) // pc of the next instruction after branch
+  val isRas = Output(Bool())
+  val rasAction = Output(UInt(2.W))
+}
+
+object ras_constants{
+  // ras actions
+  val pop = 0
+  val push = 1
+  val popThenPush = 2
 }
 
 /**
@@ -128,6 +137,8 @@ class branchResToFetch extends composableInterface {
   val branchTaken   = Input(Bool())
   val pc            = Input(UInt(64.W)) // pc of the branched instruction
   val pcAfterBrnach = Input(UInt(64.W)) // pc of the next instruction after branch
+  val isRas = Input(Bool())
+  val rasAction = Input(UInt(2.W))
 }
 
 /*******************************************************************/
@@ -153,6 +164,7 @@ class branchResToFetch extends composableInterface {
 class pullCommitFrmRob extends composableInterface {
   val robAddr       = Input(UInt(robAddrWidth.W))
   val rdAddr        = Input(UInt(5.W))
+  val opcode = Input(UInt(7.W))
   val writeBackData = Input(UInt(64.W)) // mtval when exceptionOccured
   //Additional wires when exception handling is added
   val execptionOccured  = Input(Bool())
@@ -306,7 +318,7 @@ class pushExecResultToRob extends composableInterface {
   // Additional wires when exception handling is added
   val execptionOccured  = Output(Bool())
   val mcause            = Output(UInt(64.W))
-  val mepc              = Output(UInt(64.W))
+  //val mepc              = Output(UInt(64.W))
 }
 
 /**

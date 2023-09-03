@@ -25,20 +25,11 @@ class decode extends Module {
   val branchRes       = IO(new branchResFrmDecode)        /** sends results of branched to fetch unit */
   val toExec          = IO(new pushInsToPipeline)         /** sends the decoded instruction to the next stage of the pipeline */
   val writeBackResult = IO(new pullCommitFrmRob)          /** receives results to write into the register file */
-
+//  val regFile = IO(Output(Vec(32, UInt(64.W))))
   /**
     * Internal of the module goes here
     */
 /**----------------------------------------------------------------------------------------------------------------------*/
-
-  /** Assigning some wires for inputs to the decode unit */
-  val validIn       = fromFetch.fired                         /** Valid signal from the fetch unit */
-  val writeEn       = writeBackResult.fired                   /** Write enable signal to the register file from the rob */
-  val writeBackData = writeBackResult.writeBackData           /** Writeback data to the register file */
-  val writeRd       = Wire(UInt(rdWidth.W))                   /** Writeback address of the register file */
-  writeRd          := writeBackResult.rdAddr
-  val readyIn       = toExec.fired                            /** Valid signal from the exec unit */
-
   /** Initializing a buffer for storing the input values from the fetch unit */
   val fetchIssueBuffer = RegInit(new Bundle{
     val pc          = UInt(dataWidth.W)
@@ -56,6 +47,7 @@ class decode extends Module {
     val rs1         = new Src                             /** Register source 1 */
     val rs2         = rs1.cloneType                       /** Register source 2 */
     val write       = rs1.cloneType                       /** Register source 2 for store instructions */
+    val immediate   = UInt(dataWidth.W)
   }.Lit(
     _.instruction   -> 0.U,
     _.pc            -> 0.U,
@@ -69,7 +61,10 @@ class decode extends Module {
     _.write.data    -> 0.U,
     _.write.robAddr -> 0.U,
     _.write.fromRob -> false.B,
+    _.immediate     -> 0.U
   ))
+
+  val currentPrivilege = RegInit(MMODE.U(64.W))
 
   /** Initializing some intermediate wires */
   val opcode  = WireDefault(0.U(opcodeWidth.W))
@@ -111,7 +106,8 @@ class decode extends Module {
     _.writeRobAddr -> false.B
   ))
 
-  val stalled        = WireDefault(false.B)                 /** Stall signal */
+  val stalled   = WireDefault(false.B)                 /** Stall signal */
+  val exception = RegInit(false.B)
 
   val ins = WireDefault(0.U(insAddrWidth.W))
   val pc  = WireDefault(0.U(dataWidth.W))
@@ -121,9 +117,11 @@ class decode extends Module {
     _.isBranch      -> false.B,
     _.branchTaken   -> false.B,
     _.pc            -> 0.U,
-    _.pcAfterBrnach -> 0.U
+    _.pcAfterBrnach -> 0.U,
+    _.isRas         -> 0.B,
+    _.rasAction     -> 0.U
   ))
-  val branchValid   = WireDefault(false.B)            /** Branch result port signals are valid or not */
+  val isFetchBranch = WireDefault(false.B)            /** Branch instruction in fetchIssueBuffer */
 
   val isCSR        = WireDefault(false.B)
   val waitToCommit = WireDefault(false.B)
@@ -137,7 +135,7 @@ class decode extends Module {
   val stateRegDecodeBuf = RegInit(emptyState)
 
   /** Storing instruction and pc in the fetch buffer */
-  when(validIn && readyOutFetchBuf && fromFetch.expected.pc === fromFetch.pc) {       /** Data from the fetch unit is valid and fetch buffer is ready and the expected PC is matching */
+  when(fromFetch.fired && readyOutFetchBuf && fromFetch.expected.pc === fromFetch.pc) {       /** Data from the fetch unit is valid and fetch buffer is ready and the expected PC is matching */
     fetchIssueBuffer.instruction := fromFetch.instruction
     fetchIssueBuffer.pc          := fromFetch.pc
   }
@@ -150,6 +148,7 @@ class decode extends Module {
     decodeIssueBuffer.rs1         := rs1
     decodeIssueBuffer.rs2         := rs2
     decodeIssueBuffer.write       := write
+    decodeIssueBuffer.immediate   := immediate
   }
 
   /** Assigning outputs */
@@ -161,15 +160,17 @@ class decode extends Module {
   toExec.src2        := decodeIssueBuffer.rs2
   toExec.writeData   := decodeIssueBuffer.write
 
-  fromFetch.ready          := readyOutFetchBuf
+  fromFetch.ready          := readyOutFetchBuf && !(isFetchBranch && stateRegFetchBuf === fullState) && fromFetch.expected.valid
   fromFetch.expected.pc    := expectedPC
-  fromFetch.expected.valid := readyOutFetchBuf
+  fromFetch.expected.valid := !((isFetchBranch && stateRegFetchBuf === fullState) || (branch.isBranch && stateRegDecodeBuf === fullState))
 
-  branchRes.ready         := true.B                   /** branchValid */
+  branchRes.ready         := branch.isBranch && toExec.fired
   branchRes.isBranch      := branch.isBranch
   branchRes.branchTaken   := branch.branchTaken
   branchRes.pc            := branch.pc
   branchRes.pcAfterBrnach := branch.pcAfterBrnach
+  branchRes.rasAction     := branch.rasAction
+  branchRes.isRas         := branch.isRas
 
   writeBackResult.ready := true.B
   /**--------------------------------------------------------------------------------------------------------------------*/
@@ -185,7 +186,24 @@ class decode extends Module {
 
   insType         := getInsType(opcode)                                                 /** Deciding the instruction type */
   immediate       := getImmediate(ins, insType)                                         /** Calculating the immediate value */
-  branch.isBranch := opcode === jump.U || opcode === jumpr.U || opcode === cjump.U      /** Branch detection */
+  branch.isBranch := decodeIssueBuffer.instruction(6,0) === jump.U || decodeIssueBuffer.instruction(6,0) === jumpr.U || decodeIssueBuffer.instruction(6,0) === cjump.U      /** Branch detection in decodeIssueBuffer */
+  isFetchBranch   := opcode === jump.U || opcode === jumpr.U || opcode === cjump.U      /** Branch detection in fetchIssueBuffer */
+
+  //Return Address stack signals
+  val rdLink = decodeIssueBuffer.instruction(11,7) === 1.U || decodeIssueBuffer.instruction(11,7) === 5.U
+  val rs1Link = decodeIssueBuffer.instruction(19,15) === 1.U || decodeIssueBuffer.instruction(19,15) === 5.U
+  branch.isRas := (decodeIssueBuffer.instruction(6,0) === jump.U && (rdLink)) || (decodeIssueBuffer.instruction(6,0) === jumpr.U && (rdLink || rs1Link))
+  // set ras action
+  when(rs1Link && !rdLink){
+    branch.rasAction := pop.U
+  }.elsewhen(rdLink && !rs1Link){
+    branch.rasAction := push.U
+  }.elsewhen((rs1Link && rdLink) && decodeIssueBuffer.instruction(19,15) === decodeIssueBuffer.instruction(11,7)){
+    branch.rasAction := push.U
+  }.elsewhen((rdLink && rs1Link) && !(decodeIssueBuffer.instruction(19,15) === decodeIssueBuffer.instruction(11,7))) {
+    branch.rasAction := popThenPush.U
+  }
+
 
   /** Register File activities */
   /**--------------------------------------------------------------------------------------------------------------------*/
@@ -206,65 +224,46 @@ class decode extends Module {
   validBit(0) := 1.U
 
   /** Initializing the Register file */
-  val registerFile = Reg(Vec(regCount, UInt(dataWidth.W)))
+  val registerFile = Mem(regCount, UInt(dataWidth.W))
   registerFile(0) := 0.U
 
-  /** Valid bits for each ROB address of registers */
-  val robValidBit = RegInit(VecInit(Seq.fill(regCount)(0.U(1.W))))
-  robValidBit(0) := 0.U
-
   /** Initializing the ROB address table of register file */
-  val robFile = Reg(Vec(regCount, UInt(robAddrWidth.W)))
+  val robFile = Mem(regCount, UInt(robAddrWidth.W))
 
   /** Setting rs1 properties */
-  when(opcode === auipc.U || opcode === jump.U || opcode === jumpr.U) {
+  when(opcode === auipc.U || opcode === jump.U || opcode === system.U) {
     rs1.data         := pc
     rs1.robAddr      := 0.U
     valid.rs1Data    := true.B
     valid.rs1RobAddr := false.B
   }
-  when(opcode === load.U || opcode === store.U || opcode === rops.U || opcode === iops.U || opcode === rops32.U || opcode === iops32.U || opcode === cjump.U) {
+  when(opcode === load.U || opcode === store.U || opcode === rops.U || opcode === iops.U || opcode === rops32.U || opcode === iops32.U || opcode === cjump.U || opcode === jumpr.U || opcode === amos.U) {
     rs1.data         := registerFile(rs1Addr)
     rs1.robAddr      := robFile(rs1Addr)
-    valid.rs1Data    := Mux(validBit(rs1Addr) === 1.U, true.B, false.B)
-    valid.rs1RobAddr := Mux(robValidBit(rs1Addr) === 1.U, true.B, false.B)
-    when(toExec.fired && decodeIssueBuffer.instruction(11, 7) === rs1Addr && (decodeIssueBuffer.insType === rtype.U || decodeIssueBuffer.insType === utype.U || decodeIssueBuffer.insType === itype.U || decodeIssueBuffer.insType === jtype.U) && rs1Addr =/= 0.U) {
-      valid.rs1Data := false.B
-      valid.rs1RobAddr := true.B
-      rs1.robAddr := toExec.robAddr
-      rs1.fromRob := true.B
-    }.elsewhen(writeBackResult.fired && (robFile(writeBackResult.rdAddr) === writeBackResult.robAddr) && (writeBackResult.rdAddr === rs1Addr) && (writeBackResult.rdAddr =/= 0.U) && (writeBackResult.rdAddr =/= 0.U)) {
-      rs1.data         := writeBackResult.writeBackData
-      valid.rs1Data    := true.B
-      valid.rs1RobAddr := false.B
-    }
-  }
-  when(writeBackResult.fired && (robFile(writeBackResult.rdAddr) === writeBackResult.robAddr) && toExec.ready && !toExec.fired && writeBackResult.rdAddr =/= 0.U && (writeBackResult.rdAddr =/= 0.U)) {
-    when((writeBackResult.rdAddr === decodeIssueBuffer.instruction(19, 15)) && (decodeIssueBuffer.insType === rtype.U || decodeIssueBuffer.insType === itype.U || decodeIssueBuffer.insType === stype.U || decodeIssueBuffer.insType === btype.U)) {
-      decodeIssueBuffer.rs1.data         := writeBackResult.writeBackData
-      decodeIssueBuffer.rs1.fromRob    := false.B
-    }
-    when((writeBackResult.rdAddr === decodeIssueBuffer.instruction(24, 20)) && (decodeIssueBuffer.insType === rtype.U || decodeIssueBuffer.insType === stype.U || decodeIssueBuffer.insType === btype.U)) {
-      
-      when(decodeIssueBuffer.insType === stype.U) {
-        decodeIssueBuffer.write.data         := writeBackResult.writeBackData
-        decodeIssueBuffer.write.fromRob    := false.B
-      }.otherwise {
-        decodeIssueBuffer.rs2.data         := writeBackResult.writeBackData
-        decodeIssueBuffer.rs2.fromRob    := false.B
-      }
+    when(stateRegDecodeBuf === fullState) {                                                                   /** Check dependencies in adjacent instrucitons */
+      valid.rs1Data    := rs1Addr =/= decodeIssueBuffer.instruction(11,7) && validBit(rs1Addr).asBool
+      valid.rs1RobAddr := rs1Addr =/= decodeIssueBuffer.instruction(11,7) && (~validBit(rs1Addr)).asBool
+    }.otherwise {
+      valid.rs1Data    := validBit(rs1Addr).asBool
+      valid.rs1RobAddr := (~validBit(rs1Addr)).asBool
     }
   }
 
   /** Setting rs2 properties */
-  when(opcode === jumpr.U || opcode === jump.U) {
+  when(opcode === jumpr.U) {
+    rs2.data         := pc
+    rs2.robAddr      := 0.U
+    valid.rs2Data    := true.B
+    valid.rs2RobAddr := false.B
+  }
+  when(opcode === jump.U || opcode === system.U) {
     rs2.data         := 4.U
     rs2.robAddr      := 0.U
     valid.rs2Data    := true.B
     valid.rs2RobAddr := false.B
   }
   when(opcode === load.U || opcode === store.U || opcode === iops.U || opcode === iops32.U || opcode === auipc.U || opcode === lui.U) {
-    rs2.data := immediate
+    rs2.data         := immediate
     rs2.robAddr      := 0.U
     valid.rs2Data    := true.B
     valid.rs2RobAddr := false.B
@@ -272,82 +271,56 @@ class decode extends Module {
   when(opcode === cjump.U || opcode === rops.U || opcode === rops32.U) {
     rs2.data         := registerFile(rs2Addr)
     rs2.robAddr      := robFile(rs2Addr)
-    valid.rs2Data    := Mux(validBit(rs2Addr) === 1.U, true.B, false.B)
-    valid.rs2RobAddr := Mux(robValidBit(rs2Addr) === 1.U, true.B, false.B)
-    when(toExec.fired && decodeIssueBuffer.instruction(11, 7) === rs2Addr && (decodeIssueBuffer.insType === rtype.U || decodeIssueBuffer.insType === utype.U || decodeIssueBuffer.insType === itype.U || decodeIssueBuffer.insType === jtype.U) && rs2Addr =/= 0.U) {
-      valid.rs2Data := false.B
-      valid.rs2RobAddr := true.B
-      rs2.robAddr := toExec.robAddr
-    }.elsewhen(writeBackResult.fired && (robFile(writeBackResult.rdAddr) === writeBackResult.robAddr) && (writeBackResult.rdAddr === rs2Addr)) {
-      rs2.data         := writeBackResult.writeBackData
-      valid.rs2Data    := true.B
-      valid.rs2RobAddr := false.B
+    when(stateRegDecodeBuf === fullState) {                                                                   /** Check dependencies in adjacent instrucitons */
+      valid.rs2Data    := rs2Addr =/= decodeIssueBuffer.instruction(11,7) && validBit(rs2Addr).asBool
+      valid.rs2RobAddr := rs2Addr =/= decodeIssueBuffer.instruction(11,7) && (~validBit(rs2Addr)).asBool
+    }.otherwise {
+      valid.rs2Data    := validBit(rs2Addr).asBool
+      valid.rs2RobAddr := (~validBit(rs2Addr)).asBool
     }
   }
 
   /** Setting rs2 properties for store instructions */
-  when(opcode === store.U) {
+  when(opcode === store.U || opcode === amos.U) {
     write.data         := registerFile(rs2Addr)
     write.robAddr      := robFile(rs2Addr)
-    valid.writeData    := Mux(validBit(rs2Addr) === 1.U, true.B, false.B)
-    valid.writeRobAddr := Mux(robValidBit(rs2Addr) === 1.U, true.B, false.B)
-    when(toExec.fired && decodeIssueBuffer.instruction(11, 7) === rs2Addr && (decodeIssueBuffer.insType === rtype.U || decodeIssueBuffer.insType === utype.U || decodeIssueBuffer.insType === itype.U || decodeIssueBuffer.insType === jtype.U) && rs2Addr =/= 0.U) {
-      valid.writeData := false.B
-      valid.writeRobAddr := true.B
-      write.robAddr := toExec.robAddr
+    when(stateRegDecodeBuf === fullState) {                                                                   /** Check dependencies in adjacent instrucitons */
+      valid.writeData := rs2Addr =/= decodeIssueBuffer.instruction(11, 7) && validBit(rs2Addr).asBool
+      valid.writeRobAddr := rs2Addr =/= decodeIssueBuffer.instruction(11, 7) && (~validBit(rs2Addr)).asBool
+    }.otherwise {
+      valid.writeData := validBit(rs2Addr).asBool
+      valid.writeRobAddr := (~validBit(rs2Addr)).asBool
     }
   }
 
   /** Register writing */
-  when(writeEn === 1.U && validBit(writeRd) === 0.U && writeRd =/= 0.U) {
-    registerFile(writeRd)  := writeBackData
-    when(robFile(writeRd) === writeBackResult.robAddr && 
-      !((insType === rtype.U || insType === utype.U || insType === itype.U || insType === jtype.U) && (validOutFetchBuf && RegNext(fromFetch.fired) && rdAddr =/= 0.U) && rdAddr === writeRd)) {// &&
-      //!((decodeIssueBuffer.insType === rtype.U || decodeIssueBuffer.insType === utype.U || decodeIssueBuffer.insType === itype.U || decodeIssueBuffer.insType === jtype.U) && (validOutDecodeBuf && decodeIssueBuffer.instruction(11, 7) =/= 0.U) && decodeIssueBuffer.instruction(11, 7) === writeRd)) {
-      validBit(writeRd)    := 1.U
-      robValidBit(writeRd) := 0.U
+  when(writeBackResult.fired === 1.U && validBit(writeBackResult.rdAddr) === 0.U && writeBackResult.rdAddr =/= 0.U && writeBackResult.opcode =/= store.U && writeBackResult.opcode =/= cjump.U) {
+    registerFile(writeBackResult.rdAddr)  := writeBackResult.writeBackData
+    when(robFile(writeBackResult.rdAddr) === writeBackResult.robAddr) {
+      validBit(writeBackResult.rdAddr)    := 1.U
     }
+  }
+
+  when(writeBackResult.fired === 1.U && validBit(writeBackResult.rdAddr) === 0.U && writeBackResult.rdAddr =/= 0.U) {
     commitRobBuf           := writeBackResult.robAddr
   }
-
-  /** Rob File writing */
-  when(decodeIssueBuffer.insType === rtype.U || decodeIssueBuffer.insType === utype.U || decodeIssueBuffer.insType === itype.U || decodeIssueBuffer.insType === jtype.U) {
-    when(readyIn) {
-      robFile(decodeIssueBuffer.instruction(11, 7))     := toExec.robAddr
-      robValidBit(decodeIssueBuffer.instruction(11, 7)) := 1.U
-      issueRobBuff                                       := toExec.robAddr
-      validBit(decodeIssueBuffer.instruction(11, 7))  := 0.U
+  
+  /** Rob File writing and deasserting valid bit for rd */
+  when((decodeIssueBuffer.insType === rtype.U || decodeIssueBuffer.insType === utype.U || decodeIssueBuffer.insType === itype.U || decodeIssueBuffer.insType === jtype.U) && decodeIssueBuffer.instruction(11,7) =/= 0.U) {
+    when(toExec.fired) {
+      robFile(decodeIssueBuffer.instruction(11,7))     := toExec.robAddr
+      validBit(decodeIssueBuffer.instruction(11,7))    := 0.U
+      issueRobBuff                                     := toExec.robAddr
     }
   }
 
-  /** Checking rs1 validity */
-  when(insType === rtype.U || insType === itype.U || insType === stype.U || insType === btype.U) {
-    valid.rs1Data    := Mux(validBit(rs1Addr) === 0.U, false.B, true.B)
-    valid.rs1RobAddr := Mux(robValidBit(rs1Addr) === 1.U, true.B, false.B)
-  }
-  /** Checking rs2 validity */
-  when(insType === rtype.U || insType === stype.U || insType === btype.U) {
-    valid.rs2Data    := Mux(validBit(rs2Addr) === 0.U, false.B, true.B)
-    valid.rs2RobAddr := Mux(robValidBit(rs2Addr) === 1.U, true.B, false.B)
-  }
-  /** Checking rd validity and changing the valid bit for rd */
-  when(insType === rtype.U || insType === utype.U || insType === itype.U || insType === jtype.U) {
-    when(validBit(rdAddr) === 0.U) {
-//      rdValid := false.B
-    }
-      .otherwise {
-        when(validOutFetchBuf && RegNext(fromFetch.fired) && rdAddr =/= 0.U) {
-          //validBit(rdAddr) := 0.U
-        }
-      }
-  }
   /**--------------------------------------------------------------------------------------------------------------------*/
 
   when(stateRegFetchBuf === fullState && !isCSR) {
-    stalled       := !((valid.rs1Data || valid.rs1RobAddr) && (valid.rs2RobAddr || valid.rs2Data) && (valid.writeData || valid.writeRobAddr)) || (branch.isBranch && !(valid.rs1Data && valid.rs2Data)) /** stall signal for FSM */
-    rs1.fromRob   := !valid.rs1Data && valid.rs1RobAddr || (toExec.fired && (decodeIssueBuffer.insType === rtype.U || decodeIssueBuffer.insType === utype.U || decodeIssueBuffer.insType === itype.U || decodeIssueBuffer.insType === jtype.U) && rs1Addr === decodeIssueBuffer.instruction(11, 7) && rs1Addr =/= 0.U && (insType === rtype.U || insType === itype.U || insType === stype.U))
-    rs2.fromRob   := !valid.rs2Data && valid.rs2RobAddr || (toExec.fired && (decodeIssueBuffer.insType === rtype.U || decodeIssueBuffer.insType === utype.U || decodeIssueBuffer.insType === itype.U || decodeIssueBuffer.insType === jtype.U) && rs2Addr === decodeIssueBuffer.instruction(11, 7) && rs2Addr =/= 0.U && (insType === rtype.U))
-    write.fromRob := !valid.writeData && valid.writeRobAddr || (toExec.fired && (decodeIssueBuffer.insType === rtype.U || decodeIssueBuffer.insType === utype.U || decodeIssueBuffer.insType === itype.U || decodeIssueBuffer.insType === jtype.U) && rs2Addr === decodeIssueBuffer.instruction(11, 7) && rs2Addr =/= 0.U && (insType === stype.U))
+    stalled       := !((valid.rs1Data || valid.rs1RobAddr) && (valid.rs2RobAddr || valid.rs2Data) && (valid.writeData || valid.writeRobAddr)) || (isFetchBranch && !(valid.rs1Data && valid.rs2Data)) /** stall signal for FSM */
+    rs1.fromRob   := !valid.rs1Data && valid.rs1RobAddr
+    rs2.fromRob   := !valid.rs2Data && valid.rs2RobAddr
+    write.fromRob := !valid.writeData && valid.writeRobAddr
   }
 
   /** FSM for ready valid interface of fetch buffer */
@@ -356,23 +329,27 @@ class decode extends Module {
     is(emptyState) {
       validOutFetchBuf := false.B
       readyOutFetchBuf := true.B
-      when(validIn && fromFetch.pc === fromFetch.expected.pc) {
+      when(fromFetch.fired && fromFetch.pc === fromFetch.expected.pc) {
         stateRegFetchBuf := fullState
       }
     }
     is(fullState) {
-      when(stalled || (isCSR && !csrDone)) {
-        validOutFetchBuf := false.B
-        readyOutFetchBuf := false.B
-      } otherwise {
-        validOutFetchBuf := Mux(csrDone, false.B, true.B)
-        when(readyOutDecodeBuf) {
-          readyOutFetchBuf := true.B
-          when(!validIn || fromFetch.pc =/= fromFetch.expected.pc) {
-            stateRegFetchBuf := emptyState
-          }
-        } otherwise {
+      when(writeBackResult.fired && writeBackResult.execptionOccured) {
+        stateRegFetchBuf := emptyState
+      }.otherwise{
+        when(stalled || (isCSR && !csrDone)) {
+          validOutFetchBuf := false.B
           readyOutFetchBuf := false.B
+        } otherwise {
+          validOutFetchBuf := !csrDone
+          when(readyOutDecodeBuf) {
+            readyOutFetchBuf := true.B
+            when(!fromFetch.fired || fromFetch.pc =/= fromFetch.expected.pc) {
+              stateRegFetchBuf := emptyState
+            }
+          } otherwise {
+            readyOutFetchBuf := false.B
+          }
         }
       }
     }
@@ -390,14 +367,18 @@ class decode extends Module {
       }
     }
     is(fullState) {
-      validOutDecodeBuf := true.B
-      when(readyIn) {
-        readyOutDecodeBuf := true.B
-        when(!validOutFetchBuf) {
-          stateRegDecodeBuf := emptyState
+      when(writeBackResult.fired && writeBackResult.execptionOccured) {
+        stateRegDecodeBuf := emptyState
+      }.otherwise {
+        validOutDecodeBuf := true.B
+        when(toExec.fired) {
+          readyOutDecodeBuf := true.B
+          when(!validOutFetchBuf) {
+            stateRegDecodeBuf := emptyState
+          }
+        } otherwise {
+          readyOutDecodeBuf := false.B
         }
-      } otherwise {
-        readyOutDecodeBuf := false.B
       }
     }
   }
@@ -406,81 +387,345 @@ class decode extends Module {
   /** Branch handling */
   /**  ------------------------------------------------------------------------------------------------------------------*/
   def getResult(pattern: (BitPat, UInt), prev: UInt) = pattern match {
-    case (bitpat, result) => Mux(ins === bitpat, result, prev)
+    case (bitpat, result) => Mux(decodeIssueBuffer.instruction === bitpat, result, prev)
   }
 
-  when(branch.isBranch && !stalled) {
+  val targetReg = RegInit(0.U(dataWidth.W))
+
+  when(branch.isBranch && isFetchBranch) {
     val branchTaken = Seq(
-      rs1.data === rs2.data,
-      rs1.data =/= rs2.data,
-      rs1.data.asSInt < rs2.data.asSInt,
-      rs1.data.asSInt >= rs2.data.asSInt,
-      rs1.data < rs2.data,
-      rs1.data >= rs2.data
-    ).zip(Seq(0, 1, 4, 5, 6, 7).map(i => i.U === ins(14, 12))
+      decodeIssueBuffer.rs1.data === decodeIssueBuffer.rs2.data,
+      decodeIssueBuffer.rs1.data =/= decodeIssueBuffer.rs2.data,
+      decodeIssueBuffer.rs1.data.asSInt < decodeIssueBuffer.rs2.data.asSInt,
+      decodeIssueBuffer.rs1.data.asSInt >= decodeIssueBuffer.rs2.data.asSInt,
+      decodeIssueBuffer.rs1.data < decodeIssueBuffer.rs2.data,
+      decodeIssueBuffer.rs1.data >= decodeIssueBuffer.rs2.data,
+
+    ).zip(Seq(0, 1, 4, 5, 6, 7).map(i => i.U === decodeIssueBuffer.instruction(14, 12))
     ).map(condAndMatch => condAndMatch._1 && condAndMatch._2).reduce(_ || _)
 
-    val branchNextAddress = Mux(branchTaken, pc + immediate, pc + 4.U)
+    val branchNextAddress = Mux(branchTaken, decodeIssueBuffer.pc + decodeIssueBuffer.immediate, decodeIssueBuffer.pc + 4.U)
 
     val target = Seq(
-      BitPat("b?????????????????????????1101111") -> (pc + immediate), /** jal */
-      BitPat("b?????????????????????????1100111") -> (rs1.data + immediate), /** jalr */
+      BitPat("b?????????????????????????1101111") -> (decodeIssueBuffer.pc + decodeIssueBuffer.immediate), /** jal */
+      BitPat("b?????????????????????????1100111") -> (decodeIssueBuffer.rs1.data + decodeIssueBuffer.immediate), /** jalr */
       BitPat("b?????????????????????????1100011") -> branchNextAddress, /** branches */
-    ).foldRight(pc + 4.U)(getResult)
+    ).foldRight(decodeIssueBuffer.pc + 4.U)(getResult)
 
-    expectedPC := target
-    when(stateRegFetchBuf === fullState) {
-      branchValid := true.B
-    }
-    branch.branchTaken := branchTaken
-    branch.pc := pc
+    targetReg := target
+
+    branch.branchTaken := branchTaken || decodeIssueBuffer.instruction(6,0) === jump.U || decodeIssueBuffer.instruction(6,0) === jumpr.U
+    branch.pc := decodeIssueBuffer.pc
     branch.pcAfterBrnach := target
-  } otherwise {
-    expectedPC := pc + 4.U
   }
   /**--------------------------------------------------------------------------------------------------------------------*/
+
+  val delayReg = RegInit(0.U(64.W))
 
   /** CSR handling */
   /**--------------------------------------------------------------------------------------------------------------------*/
-  isCSR := (opcode === system.U) && (fun3 === "b001".U || fun3 === "b010".U || fun3 === "b011".U || fun3 === "b101".U || fun3 === "b110".U || fun3 === "b111".U)
-  waitToCommit := isCSR && (issueRobBuff =/= commitRobBuf) && !csrDone
+  isCSR := (opcode === system.U) && (fun3 =/= 0.U)
+  waitToCommit := (issueRobBuff =/= commitRobBuf) && toExec.fired && stateRegDecodeBuf === fullState && !csrDone
 
-  val csrFile = RegInit(VecInit(Seq.fill(csrRegCount)(0.U(64.W))))
+//  val csrFile = Mem(csrRegCount, UInt(dataWidth.W))
+
+  val ustatus = Mem(1, UInt(dataWidth.W))
+  val utvec = Mem(1, UInt(dataWidth.W))
+  val uepc = Mem(1, UInt(dataWidth.W))
+  val ucause = Mem(1, UInt(dataWidth.W))
+  val scounteren = Mem(1, UInt(dataWidth.W))
+  val satp = Mem(1, UInt(dataWidth.W))
+  val mstatus = Mem(1, UInt(dataWidth.W))
+  val misa = Mem(1, UInt(dataWidth.W))
+  val medeleg = Mem(1, UInt(dataWidth.W))
+  val mideleg = Mem(1, UInt(dataWidth.W))
+  val mie = Mem(1, UInt(dataWidth.W))
+  val mtvec = Mem(1, UInt(dataWidth.W))
+  val mcounteren = Mem(1, UInt(dataWidth.W))
+  val mscratch = Mem(1, UInt(dataWidth.W))
+  val mepc = Mem(1, UInt(dataWidth.W))
+  val mcause = Mem(1, UInt(dataWidth.W))
+  val mtval = Mem(1, UInt(dataWidth.W))
+  val mip = Mem(1, UInt(dataWidth.W))
+  val pmpcfg0 = Mem(1, UInt(dataWidth.W))
+  val pmpaddr0 = Mem(1, UInt(dataWidth.W))
+  val mvendorid = Mem(1, UInt(dataWidth.W))
+  val marchid = Mem(1, UInt(dataWidth.W))
+  val mimpid = Mem(1, UInt(dataWidth.W))
+  val mhartid = Mem(1, UInt(dataWidth.W))
+
+//  csrFile(MSTATUS.U) := (csrFile(MSTATUS.U) & "h0000000000001800".U) | "h0000002200000000".U
+  mstatus(0) := (mstatus(0) & "h0000000000001800".U) | "h0000002200000000".U
+  misa(0) := "h101101".U
+
+  val csrReadData = WireDefault(0.U(dataWidth.W))
 
   when(isCSR && !waitToCommit) {
-    val csrReadData  = csrFile(immediate)
+//    val csrReadData  = Mux(immediate === "h301".U , "h101101".U, csrFile(immediate))
+    switch(immediate) {
+      is("h000".U) { csrReadData := ustatus(0) }
+      is("h005".U) { csrReadData := utvec(0) }
+      is("h041".U) { csrReadData := uepc(0) }
+      is("h042".U) { csrReadData := ucause(0) }
+      is("h106".U) { csrReadData := scounteren(0) }
+      is("h180".U) { csrReadData := satp(0) }
+      is("h300".U) { csrReadData := mstatus(0) }
+      is("h301".U) { csrReadData := misa(0) }
+      is("h302".U) { csrReadData := medeleg(0) }
+      is("h303".U) { csrReadData := mideleg(0) }
+      is("h304".U) { csrReadData := mie(0) }
+      is("h305".U) { csrReadData := mtvec(0) }
+      is("h306".U) { csrReadData := mcounteren(0) }
+      is("h340".U) { csrReadData := mscratch(0) }
+      is("h341".U) { csrReadData := mepc(0) }
+      is("h342".U) { csrReadData := mcause(0) }
+      is("h343".U) { csrReadData := mtval(0) }
+      is("h344".U) { csrReadData := mip(0) }
+      is("h3a0".U) { csrReadData := pmpcfg0(0) }
+      is("h3b0".U) { csrReadData := pmpaddr0(0) }
+      is("hf11".U) { csrReadData := mvendorid(0) }
+      is("hf12".U) { csrReadData := marchid(0) }
+      is("hf13".U) { csrReadData := mimpid(0) }
+      is("hf14".U) { csrReadData := mhartid(0) }
+    }
+
     val csrWriteData = registerFile(rs1Addr)
     val csrWriteImmediate = rs1Addr & "h0000_0000_0000_001f".U
-    registerFile(writeRd) := csrReadData
+    when(rdAddr =/= 0.U) {
+      delayReg := csrReadData
+      registerFile(rdAddr) := delayReg
+    }
+
     switch(fun3) {
       is("b001".U) {
-        csrFile(immediate) := csrWriteData
+//        csrFile(immediate) := csrWriteData
+        switch(immediate) {
+          is("h000".U) { ustatus(0) := csrWriteData }
+          is("h005".U) { utvec(0) := csrWriteData }
+          is("h041".U) { uepc(0) := csrWriteData }
+          is("h042".U) { ucause(0) := csrWriteData }
+          is("h106".U) { scounteren(0) := csrWriteData }
+          is("h180".U) { satp(0) := csrWriteData }
+          is("h300".U) { mstatus(0) := csrWriteData }
+          is("h301".U) { misa(0) := csrWriteData }
+          is("h302".U) { medeleg(0) := csrWriteData }
+          is("h303".U) { mideleg(0) := csrWriteData }
+          is("h304".U) { mie(0) := csrWriteData }
+          is("h305".U) { mtvec(0) := csrWriteData }
+          is("h306".U) { mcounteren(0) := csrWriteData }
+          is("h340".U) { mscratch(0) := csrWriteData }
+          is("h341".U) { mepc(0) := csrWriteData }
+          is("h342".U) { mcause(0) := csrWriteData }
+          is("h343".U) { mtval(0) := csrWriteData }
+          is("h344".U) { mip(0) := csrWriteData }
+          is("h3a0".U) { pmpcfg0(0) := csrWriteData }
+          is("h3b0".U) { pmpaddr0(0) := csrWriteData }
+          is("hf11".U) { mvendorid(0) := csrWriteData }
+          is("hf12".U) { marchid(0) := csrWriteData }
+          is("hf13".U) { mimpid(0) := csrWriteData }
+          is("hf14".U) { mhartid(0) := csrWriteData }
+        }
       }
       is("b010".U) {
-        csrFile(immediate) := csrReadData | csrWriteData
+//        csrFile(immediate) := csrReadData | csrWriteData
+        switch(immediate) {
+          is("h000".U) { ustatus(0)     := csrReadData | csrWriteData }
+          is("h005".U) { utvec(0)       := csrReadData | csrWriteData }
+          is("h041".U) { uepc(0)        := csrReadData | csrWriteData }
+          is("h042".U) { ucause(0)      := csrReadData | csrWriteData }
+          is("h106".U) { scounteren(0)  := csrReadData | csrWriteData }
+          is("h180".U) { satp(0)        := csrReadData | csrWriteData }
+          is("h300".U) { mstatus(0)     := csrReadData | csrWriteData }
+          is("h301".U) { misa(0)        := csrReadData | csrWriteData }
+          is("h302".U) { medeleg(0)     := csrReadData | csrWriteData }
+          is("h303".U) { mideleg(0)     := csrReadData | csrWriteData }
+          is("h304".U) { mie(0)         := csrReadData | csrWriteData }
+          is("h305".U) { mtvec(0)       := csrReadData | csrWriteData }
+          is("h306".U) { mcounteren(0)  := csrReadData | csrWriteData }
+          is("h340".U) { mscratch(0)    := csrReadData | csrWriteData }
+          is("h341".U) { mepc(0)        := csrReadData | csrWriteData }
+          is("h342".U) { mcause(0)      := csrReadData | csrWriteData }
+          is("h343".U) { mtval(0)       := csrReadData | csrWriteData }
+          is("h344".U) { mip(0)         := csrReadData | csrWriteData }
+          is("h3a0".U) { pmpcfg0(0)     := csrReadData | csrWriteData }
+          is("h3b0".U) { pmpaddr0(0)    := csrReadData | csrWriteData }
+          is("hf11".U) { mvendorid(0)   := csrReadData | csrWriteData }
+          is("hf12".U) { marchid(0)     := csrReadData | csrWriteData }
+          is("hf13".U) { mimpid(0)      := csrReadData | csrWriteData }
+          is("hf14".U) { mhartid(0)     := csrReadData | csrWriteData }
+        }
       }
       is("b011".U) {
-        csrFile(immediate) := csrReadData & (~csrWriteData)
+//        csrFile(immediate) := csrReadData & ~csrWriteData
+        switch(immediate) {
+          is("h000".U) { ustatus(0)     := csrReadData & ~csrWriteData }
+          is("h005".U) { utvec(0)       := csrReadData & ~csrWriteData }
+          is("h041".U) { uepc(0)        := csrReadData & ~csrWriteData }
+          is("h042".U) { ucause(0)      := csrReadData & ~csrWriteData }
+          is("h106".U) { scounteren(0)  := csrReadData & ~csrWriteData }
+          is("h180".U) { satp(0)        := csrReadData & ~csrWriteData }
+          is("h300".U) { mstatus(0)     := csrReadData & ~csrWriteData }
+          is("h301".U) { misa(0)        := csrReadData & ~csrWriteData }
+          is("h302".U) { medeleg(0)     := csrReadData & ~csrWriteData }
+          is("h303".U) { mideleg(0)     := csrReadData & ~csrWriteData }
+          is("h304".U) { mie(0)         := csrReadData & ~csrWriteData }
+          is("h305".U) { mtvec(0)       := csrReadData & ~csrWriteData }
+          is("h306".U) { mcounteren(0)  := csrReadData & ~csrWriteData }
+          is("h340".U) { mscratch(0)    := csrReadData & ~csrWriteData }
+          is("h341".U) { mepc(0)        := csrReadData & ~csrWriteData }
+          is("h342".U) { mcause(0)      := csrReadData & ~csrWriteData }
+          is("h343".U) { mtval(0)       := csrReadData & ~csrWriteData }
+          is("h344".U) { mip(0)         := csrReadData & ~csrWriteData }
+          is("h3a0".U) { pmpcfg0(0)     := csrReadData & ~csrWriteData }
+          is("h3b0".U) { pmpaddr0(0)    := csrReadData & ~csrWriteData }
+          is("hf11".U) { mvendorid(0)   := csrReadData & ~csrWriteData }
+          is("hf12".U) { marchid(0)     := csrReadData & ~csrWriteData }
+          is("hf13".U) { mimpid(0)      := csrReadData & ~csrWriteData }
+          is("hf14".U) { mhartid(0)     := csrReadData & ~csrWriteData }
+        }
       }
       is("b101".U) {
-        csrFile(immediate) := csrWriteImmediate
+//        csrFile(immediate) := csrWriteImmediate
+        switch(immediate) {
+          is("h000".U) { ustatus(0)     := csrWriteImmediate }
+          is("h005".U) { utvec(0)       := csrWriteImmediate }
+          is("h041".U) { uepc(0)        := csrWriteImmediate }
+          is("h042".U) { ucause(0)      := csrWriteImmediate }
+          is("h106".U) { scounteren(0)  := csrWriteImmediate }
+          is("h180".U) { satp(0)        := csrWriteImmediate }
+          is("h300".U) { mstatus(0)     := csrWriteImmediate }
+          is("h301".U) { misa(0)        := csrWriteImmediate }
+          is("h302".U) { medeleg(0)     := csrWriteImmediate }
+          is("h303".U) { mideleg(0)     := csrWriteImmediate }
+          is("h304".U) { mie(0)         := csrWriteImmediate }
+          is("h305".U) { mtvec(0)       := csrWriteImmediate }
+          is("h306".U) { mcounteren(0)  := csrWriteImmediate }
+          is("h340".U) { mscratch(0)    := csrWriteImmediate }
+          is("h341".U) { mepc(0)        := csrWriteImmediate }
+          is("h342".U) { mcause(0)      := csrWriteImmediate }
+          is("h343".U) { mtval(0)       := csrWriteImmediate }
+          is("h344".U) { mip(0)         := csrWriteImmediate }
+          is("h3a0".U) { pmpcfg0(0)     := csrWriteImmediate }
+          is("h3b0".U) { pmpaddr0(0)    := csrWriteImmediate }
+          is("hf11".U) { mvendorid(0)   := csrWriteImmediate }
+          is("hf12".U) { marchid(0)     := csrWriteImmediate }
+          is("hf13".U) { mimpid(0)      := csrWriteImmediate }
+          is("hf14".U) { mhartid(0)     := csrWriteImmediate }
+        }
       }
       is("b110".U) {
-        csrFile(immediate) := csrReadData | csrWriteImmediate
+//        csrFile(immediate) := csrReadData | csrWriteImmediate
+        switch(immediate) {
+          is("h000".U) { ustatus(0)     := csrReadData | csrWriteImmediate }
+          is("h005".U) { utvec(0)       := csrReadData | csrWriteImmediate }
+          is("h041".U) { uepc(0)        := csrReadData | csrWriteImmediate }
+          is("h042".U) { ucause(0)      := csrReadData | csrWriteImmediate }
+          is("h106".U) { scounteren(0)  := csrReadData | csrWriteImmediate }
+          is("h180".U) { satp(0)        := csrReadData | csrWriteImmediate }
+          is("h300".U) { mstatus(0)     := csrReadData | csrWriteImmediate }
+          is("h301".U) { misa(0)        := csrReadData | csrWriteImmediate }
+          is("h302".U) { medeleg(0)     := csrReadData | csrWriteImmediate }
+          is("h303".U) { mideleg(0)     := csrReadData | csrWriteImmediate }
+          is("h304".U) { mie(0)         := csrReadData | csrWriteImmediate }
+          is("h305".U) { mtvec(0)       := csrReadData | csrWriteImmediate }
+          is("h306".U) { mcounteren(0)  := csrReadData | csrWriteImmediate }
+          is("h340".U) { mscratch(0)    := csrReadData | csrWriteImmediate }
+          is("h341".U) { mepc(0)        := csrReadData | csrWriteImmediate }
+          is("h342".U) { mcause(0)      := csrReadData | csrWriteImmediate }
+          is("h343".U) { mtval(0)       := csrReadData | csrWriteImmediate }
+          is("h344".U) { mip(0)         := csrReadData | csrWriteImmediate }
+          is("h3a0".U) { pmpcfg0(0)     := csrReadData | csrWriteImmediate }
+          is("h3b0".U) { pmpaddr0(0)    := csrReadData | csrWriteImmediate }
+          is("hf11".U) { mvendorid(0)   := csrReadData | csrWriteImmediate }
+          is("hf12".U) { marchid(0)     := csrReadData | csrWriteImmediate }
+          is("hf13".U) { mimpid(0)      := csrReadData | csrWriteImmediate }
+          is("hf14".U) { mhartid(0)     := csrReadData | csrWriteImmediate }
+        }
       }
       is("b111".U) {
-        csrFile(immediate) := csrReadData & (~csrWriteImmediate)
+//        csrFile(immediate) := csrReadData & ~csrWriteImmediate
+        switch(immediate) {
+          is("h000".U) { ustatus(0)     := csrReadData & ~csrWriteImmediate }
+          is("h005".U) { utvec(0)       := csrReadData & ~csrWriteImmediate }
+          is("h041".U) { uepc(0)        := csrReadData & ~csrWriteImmediate }
+          is("h042".U) { ucause(0)      := csrReadData & ~csrWriteImmediate }
+          is("h106".U) { scounteren(0)  := csrReadData & ~csrWriteImmediate }
+          is("h180".U) { satp(0)        := csrReadData & ~csrWriteImmediate }
+          is("h300".U) { mstatus(0)     := csrReadData & ~csrWriteImmediate }
+          is("h301".U) { misa(0)        := csrReadData & ~csrWriteImmediate }
+          is("h302".U) { medeleg(0)     := csrReadData & ~csrWriteImmediate }
+          is("h303".U) { mideleg(0)     := csrReadData & ~csrWriteImmediate }
+          is("h304".U) { mie(0)         := csrReadData & ~csrWriteImmediate }
+          is("h305".U) { mtvec(0)       := csrReadData & ~csrWriteImmediate }
+          is("h306".U) { mcounteren(0)  := csrReadData & ~csrWriteImmediate }
+          is("h340".U) { mscratch(0)    := csrReadData & ~csrWriteImmediate }
+          is("h341".U) { mepc(0)        := csrReadData & ~csrWriteImmediate }
+          is("h342".U) { mcause(0)      := csrReadData & ~csrWriteImmediate }
+          is("h343".U) { mtval(0)       := csrReadData & ~csrWriteImmediate }
+          is("h344".U) { mip(0)         := csrReadData & ~csrWriteImmediate }
+          is("h3a0".U) { pmpcfg0(0)     := csrReadData & ~csrWriteImmediate }
+          is("h3b0".U) { pmpaddr0(0)    := csrReadData & ~csrWriteImmediate }
+          is("hf11".U) { mvendorid(0)   := csrReadData & ~csrWriteImmediate }
+          is("hf12".U) { marchid(0)     := csrReadData & ~csrWriteImmediate }
+          is("hf13".U) { mimpid(0)      := csrReadData & ~csrWriteImmediate }
+          is("hf14".U) { mhartid(0)     := csrReadData & ~csrWriteImmediate }
+        }
       }
     }
     csrDone := true.B
   }
 
-  when(csrDone && validIn && fromFetch.pc === fromFetch.expected.pc) {
+  when(csrDone && fromFetch.fired && fromFetch.pc === fromFetch.expected.pc) {
     csrDone := false.B
   }
-
-
   /**--------------------------------------------------------------------------------------------------------------------*/
+
+  /** Exceptions handling */
+  /** -------------------------------------------------------------------------------------------------------------------- */
+  when(writeBackResult.fired && writeBackResult.execptionOccured) {
+    exception := true.B
+    mepc(0) := writeBackResult.mepc
+    when(currentPrivilege === MMODE.U) {
+      mcause(0) := writeBackResult.mcause
+    }.otherwise {
+      mcause(0) := writeBackResult.mcause - 3.U
+    }
+    mstatus(0) := currentPrivilege
+    currentPrivilege := MMODE.U
+  }
+
+  when(exception && fromFetch.fired && fromFetch.pc === fromFetch.expected.pc) {
+    exception := false.B
+  }
+  /**--------------------------------------------------------------------------------------------------------------------*/
+
+  when(exception) {
+    expectedPC := mtvec(0)
+  }.elsewhen(opcode === system.U && fun3 === 0.U && immediate === 770.U ) {
+    currentPrivilege := mstatus(0)
+    expectedPC := mepc(0)
+    when(fromFetch.fired && fromFetch.pc === fromFetch.expected.pc) {
+      mstatus(0) := UMODE.U
+    }
+  }.elsewhen(branch.isBranch && isFetchBranch) {
+    expectedPC := targetReg
+  }.otherwise {
+    expectedPC := pc + 4.U
+  }
+
+  //debug
+  val decodePC = IO(Output(UInt(64.W)))
+  decodePC := decodeIssueBuffer.pc;
+  val decodeIns = IO(Output(UInt(32.W)))
+  decodeIns := decodeIssueBuffer.instruction
+
+
+//  var i = 0;
+//
+//  for(i <- 0 to 31){
+//    regFile(i) := registerFile(i)
+//  }
+//  regFile := registerFile
 }
 
 object DecodeUnit extends App{

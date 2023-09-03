@@ -5,6 +5,7 @@ import chisel3.util._
 import chisel3.util.HasBlackBoxResource
 import chisel3.experimental.BundleLiterals._
 import chisel3.experimental.IO
+import com.sun.org.apache.xpath.internal.operations
 
 class core extends Module {
   val icache = Module(new pipeline.memAccess.cache.iCache)
@@ -43,6 +44,8 @@ class core extends Module {
   fetch.branchRes.branchTaken   <> decode.branchRes.branchTaken
   fetch.branchRes.pc            <> decode.branchRes.pc
   fetch.branchRes.pcAfterBrnach <> decode.branchRes.pcAfterBrnach
+  fetch.branchRes.isRas := decode.branchRes.isRas
+  fetch.branchRes.rasAction := decode.branchRes.rasAction
 /* Lets connect all interfaces relating to fences later
   val dcache = Module(new pipeline.memAccess.cache.dCache)
 
@@ -61,6 +64,10 @@ class core extends Module {
   decode.writeBackResult.rdAddr := rob.commit.rdAddr
   decode.writeBackResult.writeBackData := rob.commit.writeBackData
   decode.writeBackResult.robAddr := rob.commit.robAddr
+  decode.writeBackResult.execptionOccured := rob.commit.execptionOccured
+  decode.writeBackResult.mcause := rob.commit.mcause
+  decode.writeBackResult.mepc := rob.commit.mepc
+  decode.writeBackResult.opcode := rob.commit.opcode
   // opcode is left dangling for the moment
 
   val exec = Module(new pipeline.exec.exec)
@@ -84,6 +91,7 @@ class core extends Module {
   rob.fromDecode.rd := decode.toExec.instruction(11, 7)
   rob.fromDecode.fwdrs1.robAddr := decode.toExec.src1.robAddr
   rob.fromDecode.fwdrs2.robAddr := Mux(decode.toExec.writeData.fromRob, decode.toExec.writeData.robAddr, decode.toExec.src2.robAddr)
+  rob.fromDecode.pc := decode.toExec.pc
 
   // connecting exec results with RoB
   Seq(rob.fromExec.fired, exec.toRob.fired).foreach(
@@ -91,6 +99,8 @@ class core extends Module {
   )
   rob.fromExec.execResult := exec.toRob.execResult
   rob.fromExec.robAddr := exec.toRob.robAddr
+  rob.fromExec.execeptionOccured := exec.toRob.execptionOccured
+  rob.fromExec.mcause := exec.toRob.mcause
 
   val memAccess = Module(new pipeline.memAccess.memAccess)
   val peripheral = IO(memAccess.peripherals.cloneType)
@@ -113,8 +123,8 @@ class core extends Module {
   rob.fromMem.robAddr := memAccess.toRob.robAddr
   
   val dcache = Module(new pipeline.memAccess.cache.dCache)
-  val dPort = IO(dcache.lowLevelAXI.cloneType)
-  dPort <> dcache.lowLevelAXI
+  val dPort = IO(dcache.lowLevelMem.cloneType)
+  dPort <> dcache.lowLevelMem
 
   memAccess.dCache <> dcache.pipelineMemAccess
 
@@ -129,20 +139,89 @@ class core extends Module {
   )
 
   // dcache informs fetch unit that its cache is clean
-  Seq(dcache.cachesCleaned.fired, fetch.carryOutFence.fired).foreach(
-    _ := (dcache.cachesCleaned.ready && fetch.carryOutFence.ready)
+  Seq(dcache.cachesCleaned.fired, icache.updateAllCachelines.fired).foreach(
+    _ := (dcache.cachesCleaned.ready && icache.updateAllCachelines.ready)
   )
-
+  fetch.carryOutFence.fired := fetch.carryOutFence.ready
   // fetch informs the icache to update its cache lines
-  Seq(fetch.updateAllCachelines.fired, icache.updateAllCachelines.fired).foreach(
+  /* Seq(fetch.updateAllCachelines.fired, icache.updateAllCachelines.fired).foreach(
     _ := (fetch.updateAllCachelines.ready && icache.updateAllCachelines.ready)
-  )
-
+  ) */
+  fetch.updateAllCachelines.fired := fetch.updateAllCachelines.ready
   // icache informs the fetch unit to start fetching again
   Seq(icache.cachelinesUpdatesResp.fired, fetch.cachelinesUpdatesResp.fired).foreach(
     _ := (icache.cachelinesUpdatesResp.ready && fetch.cachelinesUpdatesResp.ready)
   )
+
+  val execOut = IO(Output(new Bundle {
+    val fired = Bool()
+    val instruction = UInt(32.W)
+    val pc = UInt(64.W)
+    val src1 = UInt(64.W)
+    val src2 = UInt(64.W)
+    val writeData = UInt(64.W)
+  }))
+  execOut.fired := exec.fromIssue.fired
+  execOut.instruction := exec.fromIssue.instruction
+  execOut.pc := decode.toExec.pc
+  execOut.src1 := exec.fromIssue.src1
+  execOut.src2 := exec.fromIssue.src2
+  execOut.writeData := exec.fromIssue.writeData
+
+  val branchOut = IO(Output(new Bundle() {
+    val mispredicted = Bool()
+    val resfired = Bool()
+    val isbranch = Bool()
+    val btbhit = Bool()
+    val fetchsent = Bool()
+    val resPC = UInt(64.W)
+    val decodePC = UInt(64.W)
+    val decodeIns = UInt(32.W)
+    val isRas = Bool()
+    val rasAction = UInt(64.W)
+    val curPC = UInt(64.W)
+    val predRasAction = UInt(64.W)
+    val rasOveride = UInt(64.W)
+    val rasLogicTrigger = UInt(64.W)
+    val btbVal = UInt(64.W)
+  }))
+  branchOut.mispredicted := fetch.misprediction
+  branchOut.resfired := fetch.resfired
+  branchOut.isbranch := fetch.isabranch
+  branchOut.btbhit := fetch.btbhit
+  branchOut.fetchsent := fetch.fetchsent
+  branchOut.resPC := fetch.resPC
+  branchOut.decodePC := decode.decodePC
+  branchOut.decodeIns := decode.decodeIns
+  branchOut.isRas := fetch.isras
+  branchOut.rasAction := fetch.rasAction
+  branchOut.curPC := fetch.curPC
+  branchOut.predRasAction := fetch.predRasAction
+  branchOut.rasOveride := fetch.rasOveride
+  branchOut.rasLogicTrigger := fetch.rasLogicTrigger
+  branchOut.btbVal := fetch.btbVal
+
+
+//  val fetchOut = IO(Output(new Bundle {
+//    val fired = Bool()
+//    val pc = UInt(64.W)
+//  }))
+//  fetchOut.fired := fetch.toDecode.fired
+//  fetchOut.pc := fetch.toDecode.pc
+//
+//  val robOut = IO(Output(new Bundle {
+//    val fired = Bool()
+//    val mepc = UInt(64.W)
+//  }))
+//  robOut.fired := rob.commit.fired
+//  robOut.mepc := rob.commit.mepc
+
+
+//  val regOut = IO(Output(Vec(32, UInt(64.W))))
+//  regOut := decode.regFile
 }
+
+
 
 object core extends App {
   emitVerilog(new core)
