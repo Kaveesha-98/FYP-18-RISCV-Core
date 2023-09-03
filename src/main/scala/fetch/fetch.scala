@@ -313,5 +313,7 @@ class fetch(val fifo_size: Int) extends Module {
 }
 
 object Verilog extends App {
+
   (new chisel3.stage.ChiselStage).emitVerilog(new fetch(64))
 }
+

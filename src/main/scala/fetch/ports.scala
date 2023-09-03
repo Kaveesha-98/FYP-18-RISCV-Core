@@ -12,6 +12,7 @@ import chisel3._
 import chisel3.util._
 import chisel3.experimental.BundleLiterals._
 import chisel3.experimental.IO
+
 /**
   * Contains the class definitions of ports connecting the modules of
   * the pipeline. There are two types of interfaces (1) Decoupled interface
@@ -109,6 +110,7 @@ class recivInstrFrmFetch extends composableInterface {
   * 
   * decode unit port
   */
+
 
 //======================DECOUPLED INTERFACES============================
 /**

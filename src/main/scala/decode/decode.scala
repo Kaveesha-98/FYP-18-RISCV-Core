@@ -165,6 +165,7 @@ class decode extends Module {
   fromFetch.expected.valid := !((isFetchBranch && stateRegFetchBuf === fullState) || (branch.isBranch && stateRegDecodeBuf === fullState))
 
   branchRes.ready         := branch.isBranch && toExec.fired
+
   branchRes.isBranch      := branch.isBranch
   branchRes.branchTaken   := branch.branchTaken
   branchRes.pc            := branch.pc
@@ -188,6 +189,7 @@ class decode extends Module {
   immediate       := getImmediate(ins, insType)                                         /** Calculating the immediate value */
   branch.isBranch := decodeIssueBuffer.instruction(6,0) === jump.U || decodeIssueBuffer.instruction(6,0) === jumpr.U || decodeIssueBuffer.instruction(6,0) === cjump.U      /** Branch detection in decodeIssueBuffer */
   isFetchBranch   := opcode === jump.U || opcode === jumpr.U || opcode === cjump.U      /** Branch detection in fetchIssueBuffer */
+
 
   //Return Address stack signals
   val rdLink = decodeIssueBuffer.instruction(11,7) === 1.U || decodeIssueBuffer.instruction(11,7) === 5.U
@@ -294,6 +296,7 @@ class decode extends Module {
   }
 
   /** Register writing */
+
   when(writeBackResult.fired === 1.U && validBit(writeBackResult.rdAddr) === 0.U && writeBackResult.rdAddr =/= 0.U && writeBackResult.opcode =/= store.U && writeBackResult.opcode =/= cjump.U) {
     registerFile(writeBackResult.rdAddr)  := writeBackResult.writeBackData
     when(robFile(writeBackResult.rdAddr) === writeBackResult.robAddr) {
@@ -399,6 +402,7 @@ class decode extends Module {
       decodeIssueBuffer.rs1.data.asSInt < decodeIssueBuffer.rs2.data.asSInt,
       decodeIssueBuffer.rs1.data.asSInt >= decodeIssueBuffer.rs2.data.asSInt,
       decodeIssueBuffer.rs1.data < decodeIssueBuffer.rs2.data,
+
       decodeIssueBuffer.rs1.data >= decodeIssueBuffer.rs2.data,
 
     ).zip(Seq(0, 1, 4, 5, 6, 7).map(i => i.U === decodeIssueBuffer.instruction(14, 12))
@@ -412,9 +416,11 @@ class decode extends Module {
       BitPat("b?????????????????????????1100011") -> branchNextAddress, /** branches */
     ).foldRight(decodeIssueBuffer.pc + 4.U)(getResult)
 
+
     targetReg := target
 
     branch.branchTaken := branchTaken || decodeIssueBuffer.instruction(6,0) === jump.U || decodeIssueBuffer.instruction(6,0) === jumpr.U
+
     branch.pc := decodeIssueBuffer.pc
     branch.pcAfterBrnach := target
   }
@@ -425,6 +431,7 @@ class decode extends Module {
   /** CSR handling */
   /**--------------------------------------------------------------------------------------------------------------------*/
   isCSR := (opcode === system.U) && (fun3 =/= 0.U)
+
   waitToCommit := (issueRobBuff =/= commitRobBuf) && toExec.fired && stateRegDecodeBuf === fullState && !csrDone
 
 //  val csrFile = Mem(csrRegCount, UInt(dataWidth.W))
@@ -496,6 +503,7 @@ class decode extends Module {
       registerFile(rdAddr) := delayReg
     }
 
+
     switch(fun3) {
       is("b001".U) {
 //        csrFile(immediate) := csrWriteData
@@ -556,6 +564,7 @@ class decode extends Module {
         }
       }
       is("b011".U) {
+
 //        csrFile(immediate) := csrReadData & ~csrWriteData
         switch(immediate) {
           is("h000".U) { ustatus(0)     := csrReadData & ~csrWriteData }
@@ -583,6 +592,7 @@ class decode extends Module {
           is("hf13".U) { mimpid(0)      := csrReadData & ~csrWriteData }
           is("hf14".U) { mhartid(0)     := csrReadData & ~csrWriteData }
         }
+
       }
       is("b101".U) {
 //        csrFile(immediate) := csrWriteImmediate
@@ -643,6 +653,7 @@ class decode extends Module {
         }
       }
       is("b111".U) {
+
 //        csrFile(immediate) := csrReadData & ~csrWriteImmediate
         switch(immediate) {
           is("h000".U) { ustatus(0)     := csrReadData & ~csrWriteImmediate }
@@ -670,6 +681,7 @@ class decode extends Module {
           is("hf13".U) { mimpid(0)      := csrReadData & ~csrWriteImmediate }
           is("hf14".U) { mhartid(0)     := csrReadData & ~csrWriteImmediate }
         }
+
       }
     }
     csrDone := true.B
@@ -684,6 +696,7 @@ class decode extends Module {
   /** -------------------------------------------------------------------------------------------------------------------- */
   when(writeBackResult.fired && writeBackResult.execptionOccured) {
     exception := true.B
+
     mepc(0) := writeBackResult.mepc
     when(currentPrivilege === MMODE.U) {
       mcause(0) := writeBackResult.mcause
@@ -691,6 +704,7 @@ class decode extends Module {
       mcause(0) := writeBackResult.mcause - 3.U
     }
     mstatus(0) := currentPrivilege
+
     currentPrivilege := MMODE.U
   }
 
@@ -700,18 +714,21 @@ class decode extends Module {
   /**--------------------------------------------------------------------------------------------------------------------*/
 
   when(exception) {
+
     expectedPC := mtvec(0)
   }.elsewhen(opcode === system.U && fun3 === 0.U && immediate === 770.U ) {
     currentPrivilege := mstatus(0)
     expectedPC := mepc(0)
     when(fromFetch.fired && fromFetch.pc === fromFetch.expected.pc) {
       mstatus(0) := UMODE.U
+
     }
   }.elsewhen(branch.isBranch && isFetchBranch) {
     expectedPC := targetReg
   }.otherwise {
     expectedPC := pc + 4.U
   }
+
 
   //debug
   val decodePC = IO(Output(UInt(64.W)))
@@ -726,6 +743,7 @@ class decode extends Module {
 //    regFile(i) := registerFile(i)
 //  }
 //  regFile := registerFile
+
 }
 
 object DecodeUnit extends App{

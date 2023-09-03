@@ -67,7 +67,10 @@ class core extends Module {
   decode.writeBackResult.execptionOccured := rob.commit.execptionOccured
   decode.writeBackResult.mcause := rob.commit.mcause
   decode.writeBackResult.mepc := rob.commit.mepc
+
   decode.writeBackResult.opcode := rob.commit.opcode
+
+
   // opcode is left dangling for the moment
 
   val exec = Module(new pipeline.exec.exec)
@@ -219,6 +222,14 @@ class core extends Module {
 
 //  val regOut = IO(Output(Vec(32, UInt(64.W))))
 //  regOut := decode.regFile
+
+  val fetchOut = IO(Output(new Bundle {
+    val fired = Bool()
+    val pc = UInt(64.W)
+  }))
+  fetchOut.fired := fetch.toDecode.fired
+  fetchOut.pc := fetch.toDecode.pc
+
 }
 
 

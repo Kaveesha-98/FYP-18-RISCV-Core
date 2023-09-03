@@ -47,8 +47,10 @@ object constants {
   val MSTATUS = "h300"
   val MTVEC = "h305"
 
+
   // ras actions
   val pop = 0
   val push = 1
   val popThenPush = 2
+
 }
