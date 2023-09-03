@@ -50,7 +50,7 @@ class mainMemory(
   .foreach{ case(client, buffer) => 
     when(client.ARREADY && client.ARVALID) { 
       buffer.valid := true.B
-      buffer.address := client.ARADDR + 4.U
+      buffer.address := (client.ARADDR&(~(3.U(32.W)))) + 4.U
       buffer.id := client.ARID
       buffer.beatsRemaining := client.ARLEN
     } 
@@ -69,7 +69,7 @@ class mainMemory(
   .foreach{ case(client, (request, response)) =>
     when(client.RREADY || !response.valid) {
       response.valid := request.valid
-      response.data := Cat(Seq.tabulate(4)(i => memory.read(i.U + Mux(request.valid, request.address, client.ARADDR))).reverse)
+      response.data := Cat(Seq.tabulate(4)(i => memory.read(i.U + Mux(request.valid, request.address, (client.ARADDR&(~(3.U(32.W))))))).reverse)
       response.last := !(request.beatsRemaining.orR)
       response.id := request.id
 
@@ -167,6 +167,13 @@ class mainMemory(
   clients(instruction).BRESP := 0.U
   clients(instruction).AWREADY := false.B
   clients(instruction).WREADY := false.B
+
+  val externalProbe = IO(new Bundle {
+    val offset = Input(UInt(addressBitSize.W))
+    val accessLong = Output(UInt(64.W))
+  })
+
+  externalProbe.accessLong := Cat(Seq.tabulate(8)(i => memory.read(i.U + externalProbe.offset)).reverse)
 }
 
 object mainMemory extends App {
