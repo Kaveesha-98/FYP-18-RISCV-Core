@@ -36,4 +36,4 @@ verilator-tests/coretest/testbench
 verilator-tests/linuxboot/testbench
 verilator-tests/linuxboot/.fuse_hidden000076fb00000066
 verilator-tests/linuxboot/.fuse_hidden0000782a000000b2
-
+*.out
