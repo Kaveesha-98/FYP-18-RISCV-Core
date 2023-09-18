@@ -87,7 +87,7 @@ class simulator {
   }
 
   void step() {
-    while (1) {
+    while (1) { // runs until a instruction is completed
       tick(++tickcount, tb, tfp);
 
       if (tb ->putChar_valid) { printf("%c", tb-> putChar_byte&0xff); }
