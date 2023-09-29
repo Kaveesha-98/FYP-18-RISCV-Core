@@ -8,6 +8,6 @@ int main() {
   
   while(1) {
     bench.step();
-    cout<<"Executed Instruction"<<endl;
+    cout<<std::dec<<bench.prev_pc<<endl;
   }
 }

@@ -8,14 +8,16 @@
 #include <vector>
 #include <iostream>
 #include <string>
+#include <stdint.h>
 
 using namespace std;
 
 class simulator {
   private:
-  Vsystem *tb;
-	VerilatedVcdC* tfp;
-  unsigned tickcount;
+  Vsystem         *tb;
+	VerilatedVcdC*  tfp;
+  unsigned        tickcount;
+
   void tick(int tickcount, Vsystem *tb, VerilatedVcdC* tfp){
     tb->eval();
     if (tfp){
@@ -43,6 +45,9 @@ class simulator {
   }
 
   public:
+
+  uint64_t  prev_pc;
+
   void init() {
     tb = (new Vsystem);
 	
@@ -89,6 +94,7 @@ class simulator {
   void step() {
     while (1) { // runs until a instruction is completed
       if (tb -> robOut_commitFired){
+        prev_pc = tb -> robOut_pc;
         tick(++tickcount, tb, tfp);
         if (tb ->putChar_valid) { printf("%c", tb-> putChar_byte&0xff); }
         break;

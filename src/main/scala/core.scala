@@ -234,9 +234,10 @@ class core extends Module {
 
   val robOut = IO(Output(new Bundle() {
     val commitFired = Bool()
+    val pc         = UInt(64.W)
   }))
   robOut.commitFired := rob.commit.fired
-
+  robOut.pc          := rob.commit.mepc
 }
 
 
