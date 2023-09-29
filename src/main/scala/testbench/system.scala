@@ -32,6 +32,10 @@ class system extends Module {
 
   val prober = IO(memory.externalProbe.cloneType)
   prober <> memory.externalProbe
+
+
+  val robOut = IO(Output(cpu.robOut.cloneType))
+  robOut := cpu.robOut
 }
 
 object system extends App {

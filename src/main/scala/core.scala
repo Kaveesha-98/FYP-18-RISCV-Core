@@ -171,6 +171,8 @@ class core extends Module {
   execOut.src2 := exec.fromIssue.src2
   execOut.writeData := exec.fromIssue.writeData
 
+  // Debug Signals
+
   val branchOut = IO(Output(new Bundle() {
     val mispredicted = Bool()
     val resfired = Bool()
@@ -229,6 +231,11 @@ class core extends Module {
   }))
   fetchOut.fired := fetch.toDecode.fired
   fetchOut.pc := fetch.toDecode.pc
+
+  val robOut = IO(Output(new Bundle() {
+    val commitFired = Bool()
+  }))
+  robOut.commitFired := rob.commit.fired
 
 }
 

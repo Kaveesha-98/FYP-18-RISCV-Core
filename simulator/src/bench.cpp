@@ -8,5 +8,6 @@ int main() {
   
   while(1) {
     bench.step();
+    cout<<"Executed Instruction"<<endl;
   }
 }

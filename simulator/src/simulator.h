@@ -88,6 +88,11 @@ class simulator {
 
   void step() {
     while (1) { // runs until a instruction is completed
+      if (tb -> robOut_commitFired){
+        tick(++tickcount, tb, tfp);
+        break;
+      }
+      
       tick(++tickcount, tb, tfp);
 
       if (tb ->putChar_valid) { printf("%c", tb-> putChar_byte&0xff); }

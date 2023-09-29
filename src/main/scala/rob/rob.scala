@@ -84,6 +84,7 @@ class rob extends Module {
     fifo.reset := 1.U
   }
 
+
   //printf(p"${commit}\n")
 
 }

@@ -190,11 +190,16 @@ class testbench extends Module {
   uart.valid := (waddrP === (0xE0000030L).U) && dut.peripheral.AWVALID && dut.peripheral.AWREADY
   uart.character := dut.peripheral.WDATA(7,0)
 
+  // Debug Signals
+
   val execOut = IO(Output(dut.execOut.cloneType))
   execOut := dut.execOut
 
   val branchOut = IO(Output(dut.branchOut.cloneType))
   branchOut := dut.branchOut
+
+  val robOut = IO(Output(dut.robOut.cloneType))
+  robOut := dut.robOut
 //
 //  val fetchOut = IO(Output(dut.fetchOut.cloneType))
 //  fetchOut := dut.fetchOut
