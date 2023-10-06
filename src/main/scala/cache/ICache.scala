@@ -191,7 +191,7 @@ class iCache(
   lowLevelMem.ARBURST := 1.U
   lowLevelMem.ARCACHE := 2.U
   lowLevelMem.ARID := 0.U
-  lowLevelMem.ARLEN := (iCacheBlockSize - 1).U
+  lowLevelMem.ARLEN := ((iCacheBlockSize - 1)).U
   lowLevelMem.ARLOCK := 0.U
   lowLevelMem.ARPROT := 0.U
   lowLevelMem.ARQOS := 0.U

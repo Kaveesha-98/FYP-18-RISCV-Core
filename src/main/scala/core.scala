@@ -25,7 +25,10 @@ class core extends Module {
     i => i := (icache.cachelinesUpdatesResp.ready && fetch.cachelinesUpdatesResp.ready)
   ) */
 
-  val decode = Module(new pipeline.decode.decode)
+  val decode = Module(new pipeline.decode.decode {
+    val registersOut = IO(Output(Vec(32, UInt(64.W))))
+    registersOut.zipWithIndex.foreach { case (outVal, i) => outVal := registerFile(i) }
+  } )
 
   // connecting instruction issue from fetch to decode
   Seq(fetch.toDecode.fired, decode.fromFetch.fired).foreach(
@@ -240,6 +243,12 @@ class core extends Module {
   robOut.pc          := rob.commit.mepc
 }
 
+trait registersOut extends core {
+  override val decode = Module(new pipeline.decode.decode {
+    val registersOut = IO(Output(Vec(32, UInt(32.W))))
+    registersOut.zipWithIndex.foreach { case (outVal, i) => outVal := registerFile(i) }
+  } )
+}
 
 
 object core extends App {

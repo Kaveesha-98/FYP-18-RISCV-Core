@@ -134,16 +134,16 @@ int main(int argc, char* argv[]) {
     if (golden_model.get_instruction() == 0x00100073) 
       break;
 
-    unsigned long current_symbol = golden_model.get_symbom_index(golden_model.get_pc(), old_symbol);
+    //unsigned long current_symbol = golden_model.get_symbom_index(golden_model.get_pc(), old_symbol);
 
-    if (current_symbol != old_symbol)
+    /* if (current_symbol != old_symbol)
     {
       outFile << setfill('0') << setw(8) << hex << golden_model.get_pc() << " " << symbols[current_symbol];// << "\n";
       outFile << setfill('0') << setw(8) << hex << golden_model.get_csr_value(MIE) << "\n";
       old_symbol = current_symbol;
-    }
-
-    switch (golden_model.check_for_mem_access(&mem_address, &data))
+    } */
+    outFile <<  setfill('0') << setw(16) << hex << golden_model.get_pc() << "\n";
+    /* switch (golden_model.check_for_mem_access(&mem_address, &data))
     {
     case 1:
       //if (mem_address == 0x80001000) { printf("0x%016lx\n", data); }
@@ -166,7 +166,7 @@ int main(int argc, char* argv[]) {
         
     default:
       break;
-    }
+    } */
     #endif
     /* if (
       golden_model.check_for_mem_access(&mem_address, &data) && 
@@ -189,6 +189,7 @@ int main(int argc, char* argv[]) {
     //printf("%d\n", timer_interr);
     // Write data to the file
     //printf("Timer might be working");
+    
     golden_model.step();
     
   }

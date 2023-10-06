@@ -243,11 +243,18 @@ class decode extends Module {
     rs1.data         := registerFile(rs1Addr)
     rs1.robAddr      := robFile(rs1Addr)
     when(stateRegDecodeBuf === fullState) {                                                                   /** Check dependencies in adjacent instrucitons */
-      valid.rs1Data    := rs1Addr =/= decodeIssueBuffer.instruction(11,7) && validBit(rs1Addr).asBool
-      valid.rs1RobAddr := rs1Addr =/= decodeIssueBuffer.instruction(11,7) && (~validBit(rs1Addr)).asBool
+      valid.rs1Data    := rs1Addr =/= decodeIssueBuffer.instruction(11,7) && (validBit(rs1Addr).asBool || (writeBackResult.fired === 1.U && !validBit(writeBackResult.rdAddr).asBool && (writeBackResult.rdAddr === rs1Addr) && (robFile(writeBackResult.rdAddr) === writeBackResult.robAddr) && writeBackResult.opcode =/= store.U && writeBackResult.opcode =/= cjump.U))
+      valid.rs1RobAddr := rs1Addr =/= decodeIssueBuffer.instruction(11,7) && ((~validBit(rs1Addr)).asBool && !(writeBackResult.fired === 1.U && !validBit(writeBackResult.rdAddr).asBool && (writeBackResult.rdAddr === rs1Addr) && (robFile(writeBackResult.rdAddr) === writeBackResult.robAddr) && writeBackResult.opcode =/= store.U && writeBackResult.opcode =/= cjump.U))
+    }.elsewhen(writeBackResult.fired === 1.U && !validBit(writeBackResult.rdAddr).asBool && (writeBackResult.rdAddr === rs1Addr) && (robFile(writeBackResult.rdAddr) === writeBackResult.robAddr) && writeBackResult.opcode =/= store.U && writeBackResult.opcode =/= cjump.U){
+      rs1.data         := writeBackResult.writeBackData
+      valid.rs1Data := true.B
+      valid.rs1RobAddr := false.B
     }.otherwise {
       valid.rs1Data    := validBit(rs1Addr).asBool
       valid.rs1RobAddr := (~validBit(rs1Addr)).asBool
+    }
+    when(writeBackResult.fired === 1.U && !validBit(writeBackResult.rdAddr).asBool && (writeBackResult.rdAddr === rs1Addr) && (robFile(writeBackResult.rdAddr) === writeBackResult.robAddr) && writeBackResult.opcode =/= store.U && writeBackResult.opcode =/= cjump.U){
+      rs1.data         := writeBackResult.writeBackData
     }
   }
 
@@ -274,11 +281,18 @@ class decode extends Module {
     rs2.data         := registerFile(rs2Addr)
     rs2.robAddr      := robFile(rs2Addr)
     when(stateRegDecodeBuf === fullState) {                                                                   /** Check dependencies in adjacent instrucitons */
-      valid.rs2Data    := rs2Addr =/= decodeIssueBuffer.instruction(11,7) && validBit(rs2Addr).asBool
-      valid.rs2RobAddr := rs2Addr =/= decodeIssueBuffer.instruction(11,7) && (~validBit(rs2Addr)).asBool
+      valid.rs2Data    := rs2Addr =/= decodeIssueBuffer.instruction(11,7) && (validBit(rs2Addr).asBool || (writeBackResult.fired === 1.U && !validBit(writeBackResult.rdAddr).asBool && (writeBackResult.rdAddr === rs2Addr) && (robFile(writeBackResult.rdAddr) === writeBackResult.robAddr) && writeBackResult.opcode =/= store.U && writeBackResult.opcode =/= cjump.U))
+      valid.rs2RobAddr := rs2Addr =/= decodeIssueBuffer.instruction(11,7) && ((~validBit(rs2Addr)).asBool && !(writeBackResult.fired === 1.U && !validBit(writeBackResult.rdAddr).asBool && (writeBackResult.rdAddr === rs2Addr) && (robFile(writeBackResult.rdAddr) === writeBackResult.robAddr) && writeBackResult.opcode =/= store.U && writeBackResult.opcode =/= cjump.U))
+    }.elsewhen(writeBackResult.fired === 1.U && !validBit(writeBackResult.rdAddr).asBool && (writeBackResult.rdAddr === rs2Addr) && (robFile(writeBackResult.rdAddr) === writeBackResult.robAddr) && writeBackResult.opcode =/= store.U && writeBackResult.opcode =/= cjump.U){
+      rs2.data         := writeBackResult.writeBackData
+      valid.rs2Data := true.B
+      valid.rs2RobAddr := false.B
     }.otherwise {
       valid.rs2Data    := validBit(rs2Addr).asBool
       valid.rs2RobAddr := (~validBit(rs2Addr)).asBool
+    }
+    when(writeBackResult.fired === 1.U && !validBit(writeBackResult.rdAddr).asBool && (writeBackResult.rdAddr === rs2Addr) && (robFile(writeBackResult.rdAddr) === writeBackResult.robAddr) && writeBackResult.opcode =/= store.U && writeBackResult.opcode =/= cjump.U){
+      rs2.data         := writeBackResult.writeBackData
     }
   }
 
@@ -287,11 +301,18 @@ class decode extends Module {
     write.data         := registerFile(rs2Addr)
     write.robAddr      := robFile(rs2Addr)
     when(stateRegDecodeBuf === fullState) {                                                                   /** Check dependencies in adjacent instrucitons */
-      valid.writeData := rs2Addr =/= decodeIssueBuffer.instruction(11, 7) && validBit(rs2Addr).asBool
-      valid.writeRobAddr := rs2Addr =/= decodeIssueBuffer.instruction(11, 7) && (~validBit(rs2Addr)).asBool
+      valid.writeData := rs2Addr =/= decodeIssueBuffer.instruction(11, 7) && (validBit(rs2Addr).asBool || (writeBackResult.fired === 1.U && !validBit(writeBackResult.rdAddr).asBool && (writeBackResult.rdAddr === rs2Addr) && (robFile(writeBackResult.rdAddr) === writeBackResult.robAddr) && writeBackResult.opcode =/= store.U && writeBackResult.opcode =/= cjump.U))
+      valid.writeRobAddr := rs2Addr =/= decodeIssueBuffer.instruction(11, 7) && ((~validBit(rs2Addr)).asBool && !(writeBackResult.fired === 1.U && !validBit(writeBackResult.rdAddr).asBool && (writeBackResult.rdAddr === rs2Addr) && (robFile(writeBackResult.rdAddr) === writeBackResult.robAddr) && writeBackResult.opcode =/= store.U && writeBackResult.opcode =/= cjump.U))
+    }.elsewhen(writeBackResult.fired === 1.U && !validBit(writeBackResult.rdAddr).asBool && (writeBackResult.rdAddr === rs2Addr) && (robFile(writeBackResult.rdAddr) === writeBackResult.robAddr) && writeBackResult.opcode =/= store.U && writeBackResult.opcode =/= cjump.U){
+      write.data         := writeBackResult.writeBackData
+      valid.writeData := true.B
+      valid.writeRobAddr := false.B
     }.otherwise {
       valid.writeData := validBit(rs2Addr).asBool
       valid.writeRobAddr := (~validBit(rs2Addr)).asBool
+    }
+    when(writeBackResult.fired === 1.U && !validBit(writeBackResult.rdAddr).asBool && (writeBackResult.rdAddr === rs2Addr) && (robFile(writeBackResult.rdAddr) === writeBackResult.robAddr) && writeBackResult.opcode =/= store.U && writeBackResult.opcode =/= cjump.U){
+      write.data         := writeBackResult.writeBackData
     }
   }
 

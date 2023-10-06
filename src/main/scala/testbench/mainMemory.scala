@@ -28,11 +28,12 @@ class mainMemory(
   // External programmer
   val programmer = IO(Input(new Bundle {
     val valid   = Bool()
-    val byte    = UInt(8.W)
+    val byte    = UInt(64.W)
     val offset  = UInt(addressBitSize.W)
   }))
 
-  when (!programmed && programmer.valid) { memory.write(programmer.offset, programmer.byte) }
+  when (!programmed && programmer.valid) { (0 to 7).foreach { i => memory.write(programmer.offset + i.U, programmer.byte(8*i + 7, 8*i)) } } // memory.write(programmer.offset, programmer.byte) }
+  // (0 to 7).foreach { i => memory.write(programmer.offset + i.U, programmer.byte(8*i + 7, 8*i)) }
 
   // connection with core pipeline
   val clients = IO(Flipped(Vec(2, (new AXI))))
@@ -70,12 +71,14 @@ class mainMemory(
     when(client.RREADY || !response.valid) {
       response.valid := request.valid
       response.data := Cat(Seq.tabulate(4)(i => memory.read(i.U + Mux(request.valid, request.address, (client.ARADDR&(~(3.U(32.W))))))).reverse)
-      response.last := !(request.beatsRemaining.orR)
+      response.last := Mux(!response.last, request.valid && !(request.beatsRemaining.orR), !(client.RVALID && client.RREADY))
       response.id := request.id
 
       when(request.valid) {
         when(!request.beatsRemaining.orR) { request.valid := false.B }
         .otherwise { request.beatsRemaining := (request.beatsRemaining - 1.U) }
+
+        request.address := request.address + 4.U
       }
     }  
     client.RVALID := response.valid
@@ -107,7 +110,7 @@ class mainMemory(
   // accepting a new write request
   when(clients(data).AWVALID && clients(data).AWREADY) {
     writeBuffers.addressValid := true.B
-    writeBuffers.address := clients(data).AWADDR
+    writeBuffers.address := clients(data).AWADDR & (~(3.U(32.W)))
     writeBuffers.id := clients(data).AWID
   }
 

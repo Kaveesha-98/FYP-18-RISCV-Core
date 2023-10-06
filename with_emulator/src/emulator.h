@@ -13,7 +13,7 @@ using namespace std::chrono;
 //#define DEBUG
 
 #define RAM_SIZE 536870912
-#define PROGRAM_INIT 0x00001000UL // starting pc of the first instruction run
+#define PROGRAM_INIT 0x80000000UL // starting pc of the first instruction run
 #define RAM_BASE 0x80000000UL
 #define RAM_HIGH 0x90000000UL
 #define BOOTROM_SIZE 1048576
@@ -71,8 +71,6 @@ struct atomic_reservation {
 
 class emulator {
 private:
-  // general purpose resgisters of the hart
-  unsigned long gprs[32];
   // pointer of the instruction to be executed
   unsigned long pc;
   // main memory of the system
@@ -99,6 +97,8 @@ private:
   unsigned char rx_ready, rx_char;
   
 public:
+  // general purpose resgisters of the hart
+  unsigned long gprs[32];
   int load_rx_char(unsigned char rx_byte) {
     if (rx_ready)
       return 0; 
@@ -222,11 +222,11 @@ public:
     csrs[MSTATUS] = 0xa00000000;
     current_symbol_index = 0;
     //std::ofstream outputFile("emulator.log");
-    last_symbol_index = symbol_pointers.size() - 1;
+    /* last_symbol_index = symbol_pointers.size() - 1;
     for (unsigned long i = 0x07e00000; i < (0x90000000 - 0x87e00000); i++)
     {
       memory[i] = dtb[i-0x07e00000];
-    }
+    } */
     rx_ready = 0;
     //printf("%ld, %ld\n", symbol_pointers.size(), symbols.size());
     
@@ -268,9 +268,9 @@ public:
         printf("Data access at %lx\n", address);
         cout << "Data access at " << hex << address << endl;
       #endif
-      if (address == 0x10000000)
+      if (address == 0xe000002cUL)
       {
-        return rx_char;
+        return 8;
       }
       if (address == 0x10000005)
       { 
@@ -310,7 +310,7 @@ public:
       } 
       
     }
-    return ~0U;
+    return 0;
   }
 
   void print_symbols() {
@@ -393,8 +393,9 @@ public:
         printf("Data write access for %lx with data %lx\n", (address), rs2);
       #endif */
       #ifdef SHOW_TERMINAL
-        if (address == 0x10000000){
+        if (address == 0xe0000030UL){
           printf("%c", (char) rs2&0xff);
+          cout << flush;
         }
       #endif
       if (address = 0x2004000) { mtimecmp = rs2; }
@@ -818,6 +819,8 @@ public:
       *destiniation = 0b00000100000001000100000001UL | (2UL << 62) ;
       break;
 
+    case MIP:
+    case MIE:
     case MHARTID:
       *destiniation = 0;
       break;

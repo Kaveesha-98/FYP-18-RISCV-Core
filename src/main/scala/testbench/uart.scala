@@ -52,7 +52,7 @@ class uart extends Module {
     when(!readRequestBuffer.len.orR) { readRequestBuffer.valid := false.B }
   }
 
-  client.RDATA := 8.U
+  client.RDATA := Mux((readRequestBuffer.address&("hff".U)) === ("h2c".U), 8.U, 0.U)
   client.RID := readRequestBuffer.id
   client.RLAST := !readRequestBuffer.len.orR
   client.RRESP := 0.U

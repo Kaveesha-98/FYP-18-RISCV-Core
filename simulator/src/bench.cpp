@@ -5,9 +5,10 @@ int main() {
 
   bench.init();
   printf("bench inititated!\n");
+  cout << endl;
   
   while(1) {
+    cout<<std::hex<<bench.prev_pc<<endl;
     bench.step();
-    cout<<std::dec<<bench.prev_pc<<endl;
   }
 }

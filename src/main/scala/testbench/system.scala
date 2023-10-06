@@ -10,7 +10,12 @@ import _root_.testbench.mainMemory
 import _root_.testbench.uart
 
 class system extends Module {
-  val cpu = Module(new core)
+  
+
+  val cpu = Module(new core {
+    val registersOut = IO(Output(decode.registersOut.cloneType))
+    registersOut := decode.registersOut
+  })
 
   val memory = Module(new mainMemory)
 
@@ -33,6 +38,8 @@ class system extends Module {
   val prober = IO(memory.externalProbe.cloneType)
   prober <> memory.externalProbe
 
+  val registersOut = IO(Output(cpu.registersOut.cloneType))
+  registersOut := cpu.registersOut
 
   val robOut = IO(Output(cpu.robOut.cloneType))
   robOut := cpu.robOut
