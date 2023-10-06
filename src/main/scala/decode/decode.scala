@@ -462,8 +462,8 @@ class decode extends Module {
   val mhartid = Mem(1, UInt(dataWidth.W))
 
 //  csrFile(MSTATUS.U) := (csrFile(MSTATUS.U) & "h0000000000001800".U) | "h0000002200000000".U
-  mstatus(0) := (mstatus(0) & "h0000000000001800".U) | "h0000002200000000".U
-  misa(0) := "h101101".U
+  mstatus(0) := (mstatus(0) & "h0000000000001800".U) | "h0000000a00000000".U
+  misa(0) := "b100000001000100000001".U(64.W) + (2.U(64.W) << 62)
 
   val csrReadData = WireDefault(0.U(dataWidth.W))
 
