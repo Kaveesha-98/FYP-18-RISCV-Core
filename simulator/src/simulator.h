@@ -116,9 +116,15 @@ class simulator {
     #else
     for (int i = 0; !(tb -> robOut_commitFired) && i < STEP_TIMEOUT; i++) {
     #endif
-      // if (tb ->putChar_valid) { cout << (char)(tb -> putChar_byte) << flush; }
+    #ifdef SHOW_TERMINAL
+      if (tb ->putChar_valid) { cout << tb -> putChar_byte << flush; }
+    #endif
       tick(++tickcount, tb, tfp);
     }
+    
+    #ifdef SHOW_TERMINAL
+    if (tb ->putChar_valid) { cout << tb -> putChar_byte << flush; }
+    #endif
     // return 1 indicate timeout
     prev_pc = tb -> robOut_pc;
     if (tb -> robOut_commitFired) { return 0; } else { return 1; }
