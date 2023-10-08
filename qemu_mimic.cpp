@@ -65,12 +65,12 @@ int main(int argc, char* argv[]) {
     return 1;
   }
   simulator bench;
-  bench.init(argv[1]);
+  bench.init(argv[1], argv[2], argv[3]);
   printf("bench inititated!\n");
   cout << endl;
 
-  // golden_model.load_dtb("resources/qemu.dtb", 0x7e00000UL);
-  // golden_model.load_bootrom("resources/build/qemu_rom/boot.bin");
+  golden_model.load_dtb(argv[2], 0x7e00000UL);
+  golden_model.load_bootrom(argv[3]);
   // golden_model.load_symbols("resources/symbol_names.txt", "resources/symbol_pointers.bin");
   char x;
   golden_model.init();
@@ -203,7 +203,7 @@ int main(int argc, char* argv[]) {
     //printf("Timer might be working");
     if (bench.prev_pc != golden_model.get_pc()) { 
       cout << "PC mismatech emulator: " << hex << golden_model.get_pc();
-      cout << " simulator: " << hex << bench.prev_pc << endl;
+      cout << " emulator instruction: " << setfill('0') << setw(8) << hex << golden_model.get_instruction();      cout << " simulator: " << hex << bench.prev_pc << endl;
       golden_model.show_state();
       break;
     }

@@ -13,7 +13,7 @@ using namespace std::chrono;
 //#define DEBUG
 
 #define RAM_SIZE 536870912
-#define PROGRAM_INIT 0x80000000UL // starting pc of the first instruction run
+#define PROGRAM_INIT 0x87ffff00UL // starting pc of the first instruction run
 #define RAM_BASE 0x80000000UL
 #define RAM_HIGH 0x90000000UL
 #define BOOTROM_SIZE 1048576
@@ -222,12 +222,16 @@ public:
     csrs[MSTATUS] = 0xa00000000;
     current_symbol_index = 0;
     //std::ofstream outputFile("emulator.log");
-    /* last_symbol_index = symbol_pointers.size() - 1;
+    last_symbol_index = symbol_pointers.size() - 1;
     for (unsigned long i = 0x07e00000; i < (0x90000000 - 0x87e00000); i++)
     {
       memory[i] = dtb[i-0x07e00000];
-    } */
+    }
     rx_ready = 0;
+
+    for (unsigned long i = 0x07ffff00; i < (0x90000000 - 0x87ffff00); i++) {
+      memory[i] = boot_rom[i - 0x07ffff00];
+    }
     //printf("%ld, %ld\n", symbol_pointers.size(), symbols.size());
     
   }
@@ -284,7 +288,7 @@ public:
       if (address == 0x200bff8)
       {
 
-        return mtime; 
+        return 0; //mtime; 
       }
       if (address == 0xc200004) {
         return (rx_ready ? 1 : 0);
