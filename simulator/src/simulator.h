@@ -10,7 +10,7 @@
 #include <string>
 #include <stdint.h>
 
-#define STEP_TIMEOUT 100
+#define STEP_TIMEOUT 1000
 
 using namespace std;
 
@@ -50,7 +50,11 @@ class simulator {
   uint64_t  prev_pc;
   unsigned        tickcount;
 
-  void init(std::string image_name = "Image") {
+  void init(
+    std::string image_name = "Image",
+    std::string dtb_name = "qemu.dtb",
+    std::string boot_rom = "boot.bin"
+  ) {
     tb = (new Vsystem);
     tickcount = 0UL;
 	
@@ -88,6 +92,38 @@ class simulator {
       printf("Kernel Loaded: %ld \%\r", (i*100)/buffer.size());		
 		}
     printf("done\n");
+    printf("loading dtb\n");
+    ifstream dtb_input(dtb_name, ios::binary);
+		//printf("Running test for : ");
+
+		vector<unsigned char> dtb_buffer(istreambuf_iterator<char>(dtb_input), {});
+    // int next_step = buffer.size()/20;
+		//printf("Loading kernel image|                    |");
+		for (int i = 0; i < dtb_buffer.size(); i=i+8) {
+			tb -> programmer_byte = *reinterpret_cast<unsigned long*>(&dtb_buffer.at(i));
+      tb -> programmer_offset = (i+0x07e00000UL);
+			//cout << buffer.at(i)&255 << endl;
+			tick_nodump(++tickcount, tb, tfp);	
+      // if (progress != (i*100)/buffer.size()) 
+      printf("Kernel Loaded: %ld \%\r", (i*100)/buffer.size());		
+		}
+    printf("done\n");
+    printf("loading boot rom\n");
+    ifstream boot_input(boot_rom, ios::binary);
+		//printf("Running test for : ");
+
+		vector<unsigned char> boot_buffer(istreambuf_iterator<char>(boot_input), {});
+    // int next_step = buffer.size()/20;
+		//printf("Loading kernel image|                    |");
+		for (int i = 0; i < boot_buffer.size(); i=i+8) {
+			tb -> programmer_byte = *reinterpret_cast<unsigned long*>(&boot_buffer.at(i));
+      tb -> programmer_offset = (i+0x07ffff00UL);
+			//cout << buffer.at(i)&255 << endl;
+			tick_nodump(++tickcount, tb, tfp);	
+      // if (progress != (i*100)/buffer.size()) 
+      printf("Kernel Loaded: %ld \%\r", (i*100)/buffer.size());		
+		}
+    printf("done\n");
 		tb ->finishedProgramming = 1;
     tb ->programmer_valid = 0;
     tick_nodump(++tickcount, tb, tfp);
@@ -117,17 +153,17 @@ class simulator {
     for (int i = 0; !(tb -> robOut_commitFired) && i < STEP_TIMEOUT; i++) {
     #endif
     #ifdef SHOW_TERMINAL
-      if (tb ->putChar_valid) { cout << tb -> putChar_byte << flush; }
+      //if (tb ->putChar_valid) { cout << tb -> putChar_byte << flush; }
     #endif
       tick(++tickcount, tb, tfp);
     }
     
     #ifdef SHOW_TERMINAL
-    if (tb ->putChar_valid) { cout << tb -> putChar_byte << flush; }
+    //if (tb ->putChar_valid) { cout << tb -> putChar_byte << flush; }
     #endif
     // return 1 indicate timeout
     prev_pc = tb -> robOut_pc;
-    if (tb -> robOut_commitFired) { return 0; } else { return 1; }
+    if (tb -> robOut_commitFired) { return 0; } else { printf("TIMEOUT IN SIMULATOR!!!\n"); return 1; }
   }
 
   int check_registers(unsigned long *correct) {
