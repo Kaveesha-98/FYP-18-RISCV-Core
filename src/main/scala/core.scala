@@ -28,6 +28,8 @@ class core extends Module {
   val decode = Module(new pipeline.decode.decode {
     val registersOut = IO(Output(Vec(32, UInt(64.W))))
     registersOut.zipWithIndex.foreach { case (outVal, i) => outVal := registerFile(i) }
+
+    //val robEmpty = IO(Input(Bool()))
   } )
 
   // connecting instruction issue from fetch to decode
@@ -57,7 +59,11 @@ class core extends Module {
     _ := (fetch.carryOutFence.ready && dcache.cachesCleaned.ready)
   ) */
 
-  val rob = Module(new pipeline.rob.rob)
+  val rob = Module(new pipeline.rob.rob {
+    val isEmpty = IO(Output(Bool()))
+    isEmpty := fifo.isEmpty
+  })
+  decode.robEmpty := rob.isEmpty
 
   // connecting decode to RoB
   Seq(decode.writeBackResult.fired, rob.commit.fired).foreach(
@@ -243,12 +249,12 @@ class core extends Module {
   robOut.pc          := rob.commit.mepc
 }
 
-trait registersOut extends core {
+/* trait registersOut extends core {
   override val decode = Module(new pipeline.decode.decode {
     val registersOut = IO(Output(Vec(32, UInt(32.W))))
     registersOut.zipWithIndex.foreach { case (outVal, i) => outVal := registerFile(i) }
   } )
-}
+} */
 
 
 object core extends App {

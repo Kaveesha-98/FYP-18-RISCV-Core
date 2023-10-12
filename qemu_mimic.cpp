@@ -204,17 +204,18 @@ int main(int argc, char* argv[]) {
     if (bench.prev_pc != golden_model.get_pc()) { 
       cout << "PC mismatech emulator: " << hex << golden_model.get_pc();
       cout << " emulator instruction: " << setfill('0') << setw(8) << hex << golden_model.get_instruction();      cout << " simulator: " << hex << bench.prev_pc << endl;
-      golden_model.show_state();
+      golden_model.show_state(); 
       break;
     }
-    if (0 && (bench.tickcount >= 856489UL)) {
+    /* if (0 && (bench.tickcount >= 856489UL)) {
       cout << "time out reached" << endl;
       golden_model.show_state(); break;
-    }
-    /* if (bench.check_registers(golden_model.gprs)) { 
-      cout << "Register mismatch at register " << dec << bench.check_registers(golden_model.gprs) << endl;
-      golden_model.show_state(); break;
     } */
+    if (bench.check_registers(golden_model.gprs)) { 
+      cout << "Register mismatch at register " << dec << bench.check_registers(golden_model.gprs) << endl;
+      golden_model.show_state();
+      cout << dec << bench.tickcount << endl;bench.step(); bench.step(); bench.step(); break;
+    }
     sim_prev = golden_model.get_pc();
     bench.step();
     golden_model.step();

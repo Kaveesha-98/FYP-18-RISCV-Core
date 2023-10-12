@@ -451,9 +451,10 @@ class decode extends Module {
 
   /** CSR handling */
   /**--------------------------------------------------------------------------------------------------------------------*/
-  isCSR := (opcode === system.U) && (fun3 =/= 0.U)
+  isCSR := (opcode === system.U) && (fun3 =/= 0.U)//  && (stateRegFetchBuf === fullState)
 
-  waitToCommit := (issueRobBuff =/= commitRobBuf) && toExec.fired && stateRegDecodeBuf === fullState && !csrDone
+  val robEmpty = IO(Input(Bool()))
+  waitToCommit := ((issueRobBuff =/= commitRobBuf) && toExec.fired && stateRegDecodeBuf === fullState && !csrDone) || !robEmpty
 
 //  val csrFile = Mem(csrRegCount, UInt(dataWidth.W))
 
@@ -487,225 +488,232 @@ class decode extends Module {
   misa(0) := "b100000001000100000001".U(64.W) + (2.U(64.W) << 62)
 
   val csrReadData = WireDefault(0.U(dataWidth.W))
+  switch(immediate) {
+    is("h000".U) { csrReadData := ustatus(0) }
+    is("h005".U) { csrReadData := utvec(0) }
+    is("h041".U) { csrReadData := uepc(0) }
+    is("h042".U) { csrReadData := ucause(0) }
+    is("h106".U) { csrReadData := scounteren(0) }
+    is("h180".U) { csrReadData := satp(0) }
+    is("h300".U) { csrReadData := mstatus(0) }
+    is("h301".U) { csrReadData := misa(0) }
+    is("h302".U) { csrReadData := medeleg(0) }
+    is("h303".U) { csrReadData := mideleg(0) }
+    is("h304".U) { csrReadData := mie(0) }
+    is("h305".U) { csrReadData := mtvec(0) }
+    is("h306".U) { csrReadData := mcounteren(0) }
+    is("h340".U) { csrReadData := mscratch(0) }
+    is("h341".U) { csrReadData := mepc(0) }
+    is("h342".U) { csrReadData := mcause(0) }
+    is("h343".U) { csrReadData := mtval(0) }
+    is("h344".U) { csrReadData := mip(0) }
+    is("h3a0".U) { csrReadData := pmpcfg0(0) }
+    is("h3b0".U) { csrReadData := pmpaddr0(0) }
+    is("hf11".U) { csrReadData := mvendorid(0) }
+    is("hf12".U) { csrReadData := marchid(0) }
+    is("hf13".U) { csrReadData := mimpid(0) }
+    is("hf14".U) { csrReadData := mhartid(0) }
+  }
 
-  when(isCSR && !waitToCommit) {
+  val csrWriteData = registerFile(rs1Addr)
+  val csrWriteImmediate = rs1Addr & "h0000_0000_0000_001f".U
+  delayReg := csrReadData
+  when(
+    ((RegNext((isCSR && !waitToCommit) && ((isCSR && !waitToCommit) =/= RegNext(isCSR && !waitToCommit, false.B)), false.B)) ||
+    (RegNext(RegNext(fromFetch.fired, false.B), false.B) && RegNext(isCSR, false.B) && robEmpty && RegNext(RegNext(isCSR, false.B), false.B)))
+    && (stateRegDecodeBuf === emptyState) && robEmpty
+  ) {
 //    val csrReadData  = Mux(immediate === "h301".U , "h101101".U, csrFile(immediate))
-    switch(immediate) {
-      is("h000".U) { csrReadData := ustatus(0) }
-      is("h005".U) { csrReadData := utvec(0) }
-      is("h041".U) { csrReadData := uepc(0) }
-      is("h042".U) { csrReadData := ucause(0) }
-      is("h106".U) { csrReadData := scounteren(0) }
-      is("h180".U) { csrReadData := satp(0) }
-      is("h300".U) { csrReadData := mstatus(0) }
-      is("h301".U) { csrReadData := misa(0) }
-      is("h302".U) { csrReadData := medeleg(0) }
-      is("h303".U) { csrReadData := mideleg(0) }
-      is("h304".U) { csrReadData := mie(0) }
-      is("h305".U) { csrReadData := mtvec(0) }
-      is("h306".U) { csrReadData := mcounteren(0) }
-      is("h340".U) { csrReadData := mscratch(0) }
-      is("h341".U) { csrReadData := mepc(0) }
-      is("h342".U) { csrReadData := mcause(0) }
-      is("h343".U) { csrReadData := mtval(0) }
-      is("h344".U) { csrReadData := mip(0) }
-      is("h3a0".U) { csrReadData := pmpcfg0(0) }
-      is("h3b0".U) { csrReadData := pmpaddr0(0) }
-      is("hf11".U) { csrReadData := mvendorid(0) }
-      is("hf12".U) { csrReadData := marchid(0) }
-      is("hf13".U) { csrReadData := mimpid(0) }
-      is("hf14".U) { csrReadData := mhartid(0) }
-    }
-
-    val csrWriteData = registerFile(rs1Addr)
-    val csrWriteImmediate = rs1Addr & "h0000_0000_0000_001f".U
+    
     when(rdAddr =/= 0.U) {
-      delayReg := csrReadData
+      
       registerFile(rdAddr) := delayReg
     }
 
+    when(fetchIssueBuffer.instruction(19, 15).orR){
+      switch(fun3) {
+        is("b001".U) {
+  //        csrFile(immediate) := csrWriteData
+          switch(immediate) {
+            is("h000".U) { ustatus(0) := csrWriteData }
+            is("h005".U) { utvec(0) := csrWriteData }
+            is("h041".U) { uepc(0) := csrWriteData }
+            is("h042".U) { ucause(0) := csrWriteData }
+            is("h106".U) { scounteren(0) := csrWriteData }
+            is("h180".U) { satp(0) := csrWriteData }
+            is("h300".U) { mstatus(0) := csrWriteData }
+            is("h301".U) { misa(0) := csrWriteData }
+            is("h302".U) { medeleg(0) := csrWriteData }
+            is("h303".U) { mideleg(0) := csrWriteData }
+            is("h304".U) { mie(0) := csrWriteData }
+            is("h305".U) { mtvec(0) := csrWriteData }
+            is("h306".U) { mcounteren(0) := csrWriteData }
+            is("h340".U) { mscratch(0) := csrWriteData }
+            is("h341".U) { mepc(0) := csrWriteData }
+            is("h342".U) { mcause(0) := csrWriteData }
+            is("h343".U) { mtval(0) := csrWriteData }
+            is("h344".U) { mip(0) := csrWriteData }
+            is("h3a0".U) { pmpcfg0(0) := csrWriteData }
+            is("h3b0".U) { pmpaddr0(0) := csrWriteData }
+            is("hf11".U) { mvendorid(0) := csrWriteData }
+            is("hf12".U) { marchid(0) := csrWriteData }
+            is("hf13".U) { mimpid(0) := csrWriteData }
+            is("hf14".U) { mhartid(0) := csrWriteData }
+          }
+        }
+        is("b010".U) {
+  //        csrFile(immediate) := csrReadData | csrWriteData
+          switch(immediate) {
+            is("h000".U) { ustatus(0)     := csrReadData | csrWriteData }
+            is("h005".U) { utvec(0)       := csrReadData | csrWriteData }
+            is("h041".U) { uepc(0)        := csrReadData | csrWriteData }
+            is("h042".U) { ucause(0)      := csrReadData | csrWriteData }
+            is("h106".U) { scounteren(0)  := csrReadData | csrWriteData }
+            is("h180".U) { satp(0)        := csrReadData | csrWriteData }
+            is("h300".U) { mstatus(0)     := csrReadData | csrWriteData }
+            is("h301".U) { misa(0)        := csrReadData | csrWriteData }
+            is("h302".U) { medeleg(0)     := csrReadData | csrWriteData }
+            is("h303".U) { mideleg(0)     := csrReadData | csrWriteData }
+            is("h304".U) { mie(0)         := csrReadData | csrWriteData }
+            is("h305".U) { mtvec(0)       := csrReadData | csrWriteData }
+            is("h306".U) { mcounteren(0)  := csrReadData | csrWriteData }
+            is("h340".U) { mscratch(0)    := csrReadData | csrWriteData }
+            is("h341".U) { mepc(0)        := csrReadData | csrWriteData }
+            is("h342".U) { mcause(0)      := csrReadData | csrWriteData }
+            is("h343".U) { mtval(0)       := csrReadData | csrWriteData }
+            is("h344".U) { mip(0)         := csrReadData | csrWriteData }
+            is("h3a0".U) { pmpcfg0(0)     := csrReadData | csrWriteData }
+            is("h3b0".U) { pmpaddr0(0)    := csrReadData | csrWriteData }
+            is("hf11".U) { mvendorid(0)   := csrReadData | csrWriteData }
+            is("hf12".U) { marchid(0)     := csrReadData | csrWriteData }
+            is("hf13".U) { mimpid(0)      := csrReadData | csrWriteData }
+            is("hf14".U) { mhartid(0)     := csrReadData | csrWriteData }
+          }
+        }
+        is("b011".U) {
 
-    switch(fun3) {
-      is("b001".U) {
-//        csrFile(immediate) := csrWriteData
-        switch(immediate) {
-          is("h000".U) { ustatus(0) := csrWriteData }
-          is("h005".U) { utvec(0) := csrWriteData }
-          is("h041".U) { uepc(0) := csrWriteData }
-          is("h042".U) { ucause(0) := csrWriteData }
-          is("h106".U) { scounteren(0) := csrWriteData }
-          is("h180".U) { satp(0) := csrWriteData }
-          is("h300".U) { mstatus(0) := csrWriteData }
-          is("h301".U) { misa(0) := csrWriteData }
-          is("h302".U) { medeleg(0) := csrWriteData }
-          is("h303".U) { mideleg(0) := csrWriteData }
-          is("h304".U) { mie(0) := csrWriteData }
-          is("h305".U) { mtvec(0) := csrWriteData }
-          is("h306".U) { mcounteren(0) := csrWriteData }
-          is("h340".U) { mscratch(0) := csrWriteData }
-          is("h341".U) { mepc(0) := csrWriteData }
-          is("h342".U) { mcause(0) := csrWriteData }
-          is("h343".U) { mtval(0) := csrWriteData }
-          is("h344".U) { mip(0) := csrWriteData }
-          is("h3a0".U) { pmpcfg0(0) := csrWriteData }
-          is("h3b0".U) { pmpaddr0(0) := csrWriteData }
-          is("hf11".U) { mvendorid(0) := csrWriteData }
-          is("hf12".U) { marchid(0) := csrWriteData }
-          is("hf13".U) { mimpid(0) := csrWriteData }
-          is("hf14".U) { mhartid(0) := csrWriteData }
-        }
-      }
-      is("b010".U) {
-//        csrFile(immediate) := csrReadData | csrWriteData
-        switch(immediate) {
-          is("h000".U) { ustatus(0)     := csrReadData | csrWriteData }
-          is("h005".U) { utvec(0)       := csrReadData | csrWriteData }
-          is("h041".U) { uepc(0)        := csrReadData | csrWriteData }
-          is("h042".U) { ucause(0)      := csrReadData | csrWriteData }
-          is("h106".U) { scounteren(0)  := csrReadData | csrWriteData }
-          is("h180".U) { satp(0)        := csrReadData | csrWriteData }
-          is("h300".U) { mstatus(0)     := csrReadData | csrWriteData }
-          is("h301".U) { misa(0)        := csrReadData | csrWriteData }
-          is("h302".U) { medeleg(0)     := csrReadData | csrWriteData }
-          is("h303".U) { mideleg(0)     := csrReadData | csrWriteData }
-          is("h304".U) { mie(0)         := csrReadData | csrWriteData }
-          is("h305".U) { mtvec(0)       := csrReadData | csrWriteData }
-          is("h306".U) { mcounteren(0)  := csrReadData | csrWriteData }
-          is("h340".U) { mscratch(0)    := csrReadData | csrWriteData }
-          is("h341".U) { mepc(0)        := csrReadData | csrWriteData }
-          is("h342".U) { mcause(0)      := csrReadData | csrWriteData }
-          is("h343".U) { mtval(0)       := csrReadData | csrWriteData }
-          is("h344".U) { mip(0)         := csrReadData | csrWriteData }
-          is("h3a0".U) { pmpcfg0(0)     := csrReadData | csrWriteData }
-          is("h3b0".U) { pmpaddr0(0)    := csrReadData | csrWriteData }
-          is("hf11".U) { mvendorid(0)   := csrReadData | csrWriteData }
-          is("hf12".U) { marchid(0)     := csrReadData | csrWriteData }
-          is("hf13".U) { mimpid(0)      := csrReadData | csrWriteData }
-          is("hf14".U) { mhartid(0)     := csrReadData | csrWriteData }
-        }
-      }
-      is("b011".U) {
+  //        csrFile(immediate) := csrReadData & ~csrWriteData
+          switch(immediate) {
+            is("h000".U) { ustatus(0)     := csrReadData & ~csrWriteData }
+            is("h005".U) { utvec(0)       := csrReadData & ~csrWriteData }
+            is("h041".U) { uepc(0)        := csrReadData & ~csrWriteData }
+            is("h042".U) { ucause(0)      := csrReadData & ~csrWriteData }
+            is("h106".U) { scounteren(0)  := csrReadData & ~csrWriteData }
+            is("h180".U) { satp(0)        := csrReadData & ~csrWriteData }
+            is("h300".U) { mstatus(0)     := csrReadData & ~csrWriteData }
+            is("h301".U) { misa(0)        := csrReadData & ~csrWriteData }
+            is("h302".U) { medeleg(0)     := csrReadData & ~csrWriteData }
+            is("h303".U) { mideleg(0)     := csrReadData & ~csrWriteData }
+            is("h304".U) { mie(0)         := csrReadData & ~csrWriteData }
+            is("h305".U) { mtvec(0)       := csrReadData & ~csrWriteData }
+            is("h306".U) { mcounteren(0)  := csrReadData & ~csrWriteData }
+            is("h340".U) { mscratch(0)    := csrReadData & ~csrWriteData }
+            is("h341".U) { mepc(0)        := csrReadData & ~csrWriteData }
+            is("h342".U) { mcause(0)      := csrReadData & ~csrWriteData }
+            is("h343".U) { mtval(0)       := csrReadData & ~csrWriteData }
+            is("h344".U) { mip(0)         := csrReadData & ~csrWriteData }
+            is("h3a0".U) { pmpcfg0(0)     := csrReadData & ~csrWriteData }
+            is("h3b0".U) { pmpaddr0(0)    := csrReadData & ~csrWriteData }
+            is("hf11".U) { mvendorid(0)   := csrReadData & ~csrWriteData }
+            is("hf12".U) { marchid(0)     := csrReadData & ~csrWriteData }
+            is("hf13".U) { mimpid(0)      := csrReadData & ~csrWriteData }
+            is("hf14".U) { mhartid(0)     := csrReadData & ~csrWriteData }
+          }
 
-//        csrFile(immediate) := csrReadData & ~csrWriteData
-        switch(immediate) {
-          is("h000".U) { ustatus(0)     := csrReadData & ~csrWriteData }
-          is("h005".U) { utvec(0)       := csrReadData & ~csrWriteData }
-          is("h041".U) { uepc(0)        := csrReadData & ~csrWriteData }
-          is("h042".U) { ucause(0)      := csrReadData & ~csrWriteData }
-          is("h106".U) { scounteren(0)  := csrReadData & ~csrWriteData }
-          is("h180".U) { satp(0)        := csrReadData & ~csrWriteData }
-          is("h300".U) { mstatus(0)     := csrReadData & ~csrWriteData }
-          is("h301".U) { misa(0)        := csrReadData & ~csrWriteData }
-          is("h302".U) { medeleg(0)     := csrReadData & ~csrWriteData }
-          is("h303".U) { mideleg(0)     := csrReadData & ~csrWriteData }
-          is("h304".U) { mie(0)         := csrReadData & ~csrWriteData }
-          is("h305".U) { mtvec(0)       := csrReadData & ~csrWriteData }
-          is("h306".U) { mcounteren(0)  := csrReadData & ~csrWriteData }
-          is("h340".U) { mscratch(0)    := csrReadData & ~csrWriteData }
-          is("h341".U) { mepc(0)        := csrReadData & ~csrWriteData }
-          is("h342".U) { mcause(0)      := csrReadData & ~csrWriteData }
-          is("h343".U) { mtval(0)       := csrReadData & ~csrWriteData }
-          is("h344".U) { mip(0)         := csrReadData & ~csrWriteData }
-          is("h3a0".U) { pmpcfg0(0)     := csrReadData & ~csrWriteData }
-          is("h3b0".U) { pmpaddr0(0)    := csrReadData & ~csrWriteData }
-          is("hf11".U) { mvendorid(0)   := csrReadData & ~csrWriteData }
-          is("hf12".U) { marchid(0)     := csrReadData & ~csrWriteData }
-          is("hf13".U) { mimpid(0)      := csrReadData & ~csrWriteData }
-          is("hf14".U) { mhartid(0)     := csrReadData & ~csrWriteData }
         }
+        is("b101".U) {
+  //        csrFile(immediate) := csrWriteImmediate
+          switch(immediate) {
+            is("h000".U) { ustatus(0)     := csrWriteImmediate }
+            is("h005".U) { utvec(0)       := csrWriteImmediate }
+            is("h041".U) { uepc(0)        := csrWriteImmediate }
+            is("h042".U) { ucause(0)      := csrWriteImmediate }
+            is("h106".U) { scounteren(0)  := csrWriteImmediate }
+            is("h180".U) { satp(0)        := csrWriteImmediate }
+            is("h300".U) { mstatus(0)     := csrWriteImmediate }
+            is("h301".U) { misa(0)        := csrWriteImmediate }
+            is("h302".U) { medeleg(0)     := csrWriteImmediate }
+            is("h303".U) { mideleg(0)     := csrWriteImmediate }
+            is("h304".U) { mie(0)         := csrWriteImmediate }
+            is("h305".U) { mtvec(0)       := csrWriteImmediate }
+            is("h306".U) { mcounteren(0)  := csrWriteImmediate }
+            is("h340".U) { mscratch(0)    := csrWriteImmediate }
+            is("h341".U) { mepc(0)        := csrWriteImmediate }
+            is("h342".U) { mcause(0)      := csrWriteImmediate }
+            is("h343".U) { mtval(0)       := csrWriteImmediate }
+            is("h344".U) { mip(0)         := csrWriteImmediate }
+            is("h3a0".U) { pmpcfg0(0)     := csrWriteImmediate }
+            is("h3b0".U) { pmpaddr0(0)    := csrWriteImmediate }
+            is("hf11".U) { mvendorid(0)   := csrWriteImmediate }
+            is("hf12".U) { marchid(0)     := csrWriteImmediate }
+            is("hf13".U) { mimpid(0)      := csrWriteImmediate }
+            is("hf14".U) { mhartid(0)     := csrWriteImmediate }
+          }
+        }
+        is("b110".U) {
+  //        csrFile(immediate) := csrReadData | csrWriteImmediate
+          switch(immediate) {
+            is("h000".U) { ustatus(0)     := csrReadData | csrWriteImmediate }
+            is("h005".U) { utvec(0)       := csrReadData | csrWriteImmediate }
+            is("h041".U) { uepc(0)        := csrReadData | csrWriteImmediate }
+            is("h042".U) { ucause(0)      := csrReadData | csrWriteImmediate }
+            is("h106".U) { scounteren(0)  := csrReadData | csrWriteImmediate }
+            is("h180".U) { satp(0)        := csrReadData | csrWriteImmediate }
+            is("h300".U) { mstatus(0)     := csrReadData | csrWriteImmediate }
+            is("h301".U) { misa(0)        := csrReadData | csrWriteImmediate }
+            is("h302".U) { medeleg(0)     := csrReadData | csrWriteImmediate }
+            is("h303".U) { mideleg(0)     := csrReadData | csrWriteImmediate }
+            is("h304".U) { mie(0)         := csrReadData | csrWriteImmediate }
+            is("h305".U) { mtvec(0)       := csrReadData | csrWriteImmediate }
+            is("h306".U) { mcounteren(0)  := csrReadData | csrWriteImmediate }
+            is("h340".U) { mscratch(0)    := csrReadData | csrWriteImmediate }
+            is("h341".U) { mepc(0)        := csrReadData | csrWriteImmediate }
+            is("h342".U) { mcause(0)      := csrReadData | csrWriteImmediate }
+            is("h343".U) { mtval(0)       := csrReadData | csrWriteImmediate }
+            is("h344".U) { mip(0)         := csrReadData | csrWriteImmediate }
+            is("h3a0".U) { pmpcfg0(0)     := csrReadData | csrWriteImmediate }
+            is("h3b0".U) { pmpaddr0(0)    := csrReadData | csrWriteImmediate }
+            is("hf11".U) { mvendorid(0)   := csrReadData | csrWriteImmediate }
+            is("hf12".U) { marchid(0)     := csrReadData | csrWriteImmediate }
+            is("hf13".U) { mimpid(0)      := csrReadData | csrWriteImmediate }
+            is("hf14".U) { mhartid(0)     := csrReadData | csrWriteImmediate }
+          }
+        }
+        is("b111".U) {
 
-      }
-      is("b101".U) {
-//        csrFile(immediate) := csrWriteImmediate
-        switch(immediate) {
-          is("h000".U) { ustatus(0)     := csrWriteImmediate }
-          is("h005".U) { utvec(0)       := csrWriteImmediate }
-          is("h041".U) { uepc(0)        := csrWriteImmediate }
-          is("h042".U) { ucause(0)      := csrWriteImmediate }
-          is("h106".U) { scounteren(0)  := csrWriteImmediate }
-          is("h180".U) { satp(0)        := csrWriteImmediate }
-          is("h300".U) { mstatus(0)     := csrWriteImmediate }
-          is("h301".U) { misa(0)        := csrWriteImmediate }
-          is("h302".U) { medeleg(0)     := csrWriteImmediate }
-          is("h303".U) { mideleg(0)     := csrWriteImmediate }
-          is("h304".U) { mie(0)         := csrWriteImmediate }
-          is("h305".U) { mtvec(0)       := csrWriteImmediate }
-          is("h306".U) { mcounteren(0)  := csrWriteImmediate }
-          is("h340".U) { mscratch(0)    := csrWriteImmediate }
-          is("h341".U) { mepc(0)        := csrWriteImmediate }
-          is("h342".U) { mcause(0)      := csrWriteImmediate }
-          is("h343".U) { mtval(0)       := csrWriteImmediate }
-          is("h344".U) { mip(0)         := csrWriteImmediate }
-          is("h3a0".U) { pmpcfg0(0)     := csrWriteImmediate }
-          is("h3b0".U) { pmpaddr0(0)    := csrWriteImmediate }
-          is("hf11".U) { mvendorid(0)   := csrWriteImmediate }
-          is("hf12".U) { marchid(0)     := csrWriteImmediate }
-          is("hf13".U) { mimpid(0)      := csrWriteImmediate }
-          is("hf14".U) { mhartid(0)     := csrWriteImmediate }
-        }
-      }
-      is("b110".U) {
-//        csrFile(immediate) := csrReadData | csrWriteImmediate
-        switch(immediate) {
-          is("h000".U) { ustatus(0)     := csrReadData | csrWriteImmediate }
-          is("h005".U) { utvec(0)       := csrReadData | csrWriteImmediate }
-          is("h041".U) { uepc(0)        := csrReadData | csrWriteImmediate }
-          is("h042".U) { ucause(0)      := csrReadData | csrWriteImmediate }
-          is("h106".U) { scounteren(0)  := csrReadData | csrWriteImmediate }
-          is("h180".U) { satp(0)        := csrReadData | csrWriteImmediate }
-          is("h300".U) { mstatus(0)     := csrReadData | csrWriteImmediate }
-          is("h301".U) { misa(0)        := csrReadData | csrWriteImmediate }
-          is("h302".U) { medeleg(0)     := csrReadData | csrWriteImmediate }
-          is("h303".U) { mideleg(0)     := csrReadData | csrWriteImmediate }
-          is("h304".U) { mie(0)         := csrReadData | csrWriteImmediate }
-          is("h305".U) { mtvec(0)       := csrReadData | csrWriteImmediate }
-          is("h306".U) { mcounteren(0)  := csrReadData | csrWriteImmediate }
-          is("h340".U) { mscratch(0)    := csrReadData | csrWriteImmediate }
-          is("h341".U) { mepc(0)        := csrReadData | csrWriteImmediate }
-          is("h342".U) { mcause(0)      := csrReadData | csrWriteImmediate }
-          is("h343".U) { mtval(0)       := csrReadData | csrWriteImmediate }
-          is("h344".U) { mip(0)         := csrReadData | csrWriteImmediate }
-          is("h3a0".U) { pmpcfg0(0)     := csrReadData | csrWriteImmediate }
-          is("h3b0".U) { pmpaddr0(0)    := csrReadData | csrWriteImmediate }
-          is("hf11".U) { mvendorid(0)   := csrReadData | csrWriteImmediate }
-          is("hf12".U) { marchid(0)     := csrReadData | csrWriteImmediate }
-          is("hf13".U) { mimpid(0)      := csrReadData | csrWriteImmediate }
-          is("hf14".U) { mhartid(0)     := csrReadData | csrWriteImmediate }
-        }
-      }
-      is("b111".U) {
+  //        csrFile(immediate) := csrReadData & ~csrWriteImmediate
+          switch(immediate) {
+            is("h000".U) { ustatus(0)     := csrReadData & ~csrWriteImmediate }
+            is("h005".U) { utvec(0)       := csrReadData & ~csrWriteImmediate }
+            is("h041".U) { uepc(0)        := csrReadData & ~csrWriteImmediate }
+            is("h042".U) { ucause(0)      := csrReadData & ~csrWriteImmediate }
+            is("h106".U) { scounteren(0)  := csrReadData & ~csrWriteImmediate }
+            is("h180".U) { satp(0)        := csrReadData & ~csrWriteImmediate }
+            is("h300".U) { mstatus(0)     := csrReadData & ~csrWriteImmediate }
+            is("h301".U) { misa(0)        := csrReadData & ~csrWriteImmediate }
+            is("h302".U) { medeleg(0)     := csrReadData & ~csrWriteImmediate }
+            is("h303".U) { mideleg(0)     := csrReadData & ~csrWriteImmediate }
+            is("h304".U) { mie(0)         := csrReadData & ~csrWriteImmediate }
+            is("h305".U) { mtvec(0)       := csrReadData & ~csrWriteImmediate }
+            is("h306".U) { mcounteren(0)  := csrReadData & ~csrWriteImmediate }
+            is("h340".U) { mscratch(0)    := csrReadData & ~csrWriteImmediate }
+            is("h341".U) { mepc(0)        := csrReadData & ~csrWriteImmediate }
+            is("h342".U) { mcause(0)      := csrReadData & ~csrWriteImmediate }
+            is("h343".U) { mtval(0)       := csrReadData & ~csrWriteImmediate }
+            is("h344".U) { mip(0)         := csrReadData & ~csrWriteImmediate }
+            is("h3a0".U) { pmpcfg0(0)     := csrReadData & ~csrWriteImmediate }
+            is("h3b0".U) { pmpaddr0(0)    := csrReadData & ~csrWriteImmediate }
+            is("hf11".U) { mvendorid(0)   := csrReadData & ~csrWriteImmediate }
+            is("hf12".U) { marchid(0)     := csrReadData & ~csrWriteImmediate }
+            is("hf13".U) { mimpid(0)      := csrReadData & ~csrWriteImmediate }
+            is("hf14".U) { mhartid(0)     := csrReadData & ~csrWriteImmediate }
+          }
 
-//        csrFile(immediate) := csrReadData & ~csrWriteImmediate
-        switch(immediate) {
-          is("h000".U) { ustatus(0)     := csrReadData & ~csrWriteImmediate }
-          is("h005".U) { utvec(0)       := csrReadData & ~csrWriteImmediate }
-          is("h041".U) { uepc(0)        := csrReadData & ~csrWriteImmediate }
-          is("h042".U) { ucause(0)      := csrReadData & ~csrWriteImmediate }
-          is("h106".U) { scounteren(0)  := csrReadData & ~csrWriteImmediate }
-          is("h180".U) { satp(0)        := csrReadData & ~csrWriteImmediate }
-          is("h300".U) { mstatus(0)     := csrReadData & ~csrWriteImmediate }
-          is("h301".U) { misa(0)        := csrReadData & ~csrWriteImmediate }
-          is("h302".U) { medeleg(0)     := csrReadData & ~csrWriteImmediate }
-          is("h303".U) { mideleg(0)     := csrReadData & ~csrWriteImmediate }
-          is("h304".U) { mie(0)         := csrReadData & ~csrWriteImmediate }
-          is("h305".U) { mtvec(0)       := csrReadData & ~csrWriteImmediate }
-          is("h306".U) { mcounteren(0)  := csrReadData & ~csrWriteImmediate }
-          is("h340".U) { mscratch(0)    := csrReadData & ~csrWriteImmediate }
-          is("h341".U) { mepc(0)        := csrReadData & ~csrWriteImmediate }
-          is("h342".U) { mcause(0)      := csrReadData & ~csrWriteImmediate }
-          is("h343".U) { mtval(0)       := csrReadData & ~csrWriteImmediate }
-          is("h344".U) { mip(0)         := csrReadData & ~csrWriteImmediate }
-          is("h3a0".U) { pmpcfg0(0)     := csrReadData & ~csrWriteImmediate }
-          is("h3b0".U) { pmpaddr0(0)    := csrReadData & ~csrWriteImmediate }
-          is("hf11".U) { mvendorid(0)   := csrReadData & ~csrWriteImmediate }
-          is("hf12".U) { marchid(0)     := csrReadData & ~csrWriteImmediate }
-          is("hf13".U) { mimpid(0)      := csrReadData & ~csrWriteImmediate }
-          is("hf14".U) { mhartid(0)     := csrReadData & ~csrWriteImmediate }
         }
-
       }
     }
     csrDone := true.B
+    commitRobBuf := issueRobBuff + 1.U // making them unequal
   }
 
   when(csrDone && fromFetch.fired && fromFetch.pc === fromFetch.expected.pc) {
