@@ -255,7 +255,7 @@ class memAccess extends Module{
   // accepting write response
   when(peripherals.BREADY && peripherals.BVALID) { bready := false.B }
 
-  val peripheralRequestServed = !(peripheralRequest.free) && !(arvalid || rready || awvalid || wvalid || bready)
+  
 
   // both responses(from peripheral and dram) are buffered here(responseBuffers(0)) before pushing to commit
   // In case both peripheral and dram have responses pending the peripheral is stored to responseBuffers(1)
@@ -269,6 +269,8 @@ class memAccess extends Module{
     _.writeBackData -> 0.U,
 		_.robAddr 	-> 0.U
 	)))))
+
+  val peripheralRequestServed = (!(peripheralRequest.free) && !(arvalid || rready || awvalid || wvalid || bready) && responseBuffers(0).free && !(dCache.resp.ready && dCache.resp.valid))
 
   dCache.resp.ready := responseBuffers(1).free
 
