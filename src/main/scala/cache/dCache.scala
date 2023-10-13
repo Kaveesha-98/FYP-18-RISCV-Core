@@ -256,15 +256,15 @@ class dCache extends Module {
     .elsewhen(results(next).valid && results(next).instruction(6, 2) =/= 0.U) {
 
       results(next).valid := !(lowLevelMem.BVALID && lowLevelMem.BREADY) || results(next).instruction(3, 2) === 3.U
-      when(results(next).instruction(3, 2) === 3.U && scSuccess && (Cat(results(next).instruction(28, 27), results(next).instruction(3, 2)) =/= "b1011".U)){
-        results(next).instruction := Mux((lowLevelMem.BVALID && lowLevelMem.BREADY), results(next).instruction, Cat(results(next).instruction(31, 7), 3.U(7.W)))
+      when(results(next).instruction(3, 2) === 3.U && (Cat(results(next).instruction(28, 27), results(next).instruction(3, 2)) =/= "b1011".U)){
+        results(next).instruction := Mux((lowLevelMem.BVALID && lowLevelMem.BREADY), Cat(results(next).instruction(31, 7), 3.U(7.W)), results(next).instruction)
         when((Cat(results(next).instruction(28, 27), results(next).instruction(3, 2)) === "b1111".U)) {
           results(next).byteAlignedData := 0.U
         }
-      }.elsewhen(results(next).instruction(3, 2) === 3.U) {
+      }.elsewhen((((Cat(results(next).instruction(28, 27), results(next).instruction(3, 2)) === "b1111".U) && !scPass) || (Cat(results(next).instruction(28, 27), results(next).instruction(3, 2)) === "b1011".U)) && !(awvalid || wvalid || bready)) {
         results(next).instruction := Cat(results(next).instruction(31, 7), 3.U(7.W))
         when((Cat(results(next).instruction(28, 27), results(next).instruction(3, 2)) === "b1111".U)) {
-          results(next).byteAlignedData := Cat(0.U(31.W), 1.U & results(next).instruction(12), 0.U(31.W), 1.U)
+          results(next).byteAlignedData := Cat(0.U(31.W), 1.U ^ results(next).instruction(12), 0.U(31.W), 1.U)
         }
       }
 
@@ -279,6 +279,7 @@ class dCache extends Module {
       results(next).writeData := requests(servicing).writeData
     }
   }.elsewhen(cacheMissed && cacheFill.valid) {
+    // I think refilling cache after miss
     results(next).byteAlignedData := (VecInit.tabulate(1 << dCacheDoubleWordOffsetWidth)(i => cacheFill.block(63 + 64*i, 64*i)))(results(next).address(dCacheDoubleWordOffsetWidth+3, 3))
     results(next).tag := results(next).address(32, 32 - dCacheTagWidth)
     results(next).tagValid := true.B
