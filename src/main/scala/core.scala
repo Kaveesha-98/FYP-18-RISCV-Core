@@ -247,6 +247,14 @@ class core extends Module {
   }))
   robOut.commitFired := rob.commit.fired
   robOut.pc          := rob.commit.mepc
+
+  val ziscsrIn = RegInit(false.B)
+  when(ziscsrIn) {
+    Seq(decode.toExec.fired, exec.fromIssue.fired, rob.fromDecode.fired).foreach(_ := false.B)
+    ziscsrIn := !(rob.commit.fired && rob.commit.execptionOccured)
+  }.otherwise {
+    ziscsrIn := decode.toExec.fired && (decode.toExec.instruction(6, 0) === "h73".U)
+  }
 }
 
 /* trait registersOut extends core {
