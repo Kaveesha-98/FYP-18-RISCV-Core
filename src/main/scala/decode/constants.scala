@@ -37,10 +37,10 @@ object constants {
 
   val initialPC = coreConfiguration.instructionBase - 4      // h80000000 - 4
 
-  val MMODE = "h0000002200000000"
+  val MMODE = "h0000000a00001800"
   val HMODE = "b01"
   val SMODE = "b10"
-  val UMODE = "h0000002200001800"
+  val UMODE = "h0000000a00000000"
 
   val MEPC = "h341"
   val MCAUSE = "h342"
