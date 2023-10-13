@@ -541,7 +541,7 @@ class decode extends Module {
             is("h042".U) { ucause(0) := csrWriteData }
             is("h106".U) { scounteren(0) := csrWriteData }
             is("h180".U) { satp(0) := csrWriteData }
-            is("h300".U) { mstatus(0) := csrWriteData }
+            // is("h300".U) { mstatus(0) := csrWriteData }
             is("h301".U) { misa(0) := csrWriteData }
             is("h302".U) { medeleg(0) := csrWriteData }
             is("h303".U) { mideleg(0) := csrWriteData }
@@ -570,7 +570,7 @@ class decode extends Module {
             is("h042".U) { ucause(0)      := csrReadData | csrWriteData }
             is("h106".U) { scounteren(0)  := csrReadData | csrWriteData }
             is("h180".U) { satp(0)        := csrReadData | csrWriteData }
-            is("h300".U) { mstatus(0)     := csrReadData | csrWriteData }
+            // is("h300".U) { mstatus(0)     := csrReadData | csrWriteData }
             is("h301".U) { misa(0)        := csrReadData | csrWriteData }
             is("h302".U) { medeleg(0)     := csrReadData | csrWriteData }
             is("h303".U) { mideleg(0)     := csrReadData | csrWriteData }
@@ -600,7 +600,7 @@ class decode extends Module {
             is("h042".U) { ucause(0)      := csrReadData & ~csrWriteData }
             is("h106".U) { scounteren(0)  := csrReadData & ~csrWriteData }
             is("h180".U) { satp(0)        := csrReadData & ~csrWriteData }
-            is("h300".U) { mstatus(0)     := csrReadData & ~csrWriteData }
+            // is("h300".U) { mstatus(0)     := csrReadData & ~csrWriteData }
             is("h301".U) { misa(0)        := csrReadData & ~csrWriteData }
             is("h302".U) { medeleg(0)     := csrReadData & ~csrWriteData }
             is("h303".U) { mideleg(0)     := csrReadData & ~csrWriteData }
@@ -630,7 +630,7 @@ class decode extends Module {
             is("h042".U) { ucause(0)      := csrWriteImmediate }
             is("h106".U) { scounteren(0)  := csrWriteImmediate }
             is("h180".U) { satp(0)        := csrWriteImmediate }
-            is("h300".U) { mstatus(0)     := csrWriteImmediate }
+            // is("h300".U) { mstatus(0)     := csrWriteImmediate }
             is("h301".U) { misa(0)        := csrWriteImmediate }
             is("h302".U) { medeleg(0)     := csrWriteImmediate }
             is("h303".U) { mideleg(0)     := csrWriteImmediate }
@@ -659,7 +659,7 @@ class decode extends Module {
             is("h042".U) { ucause(0)      := csrReadData | csrWriteImmediate }
             is("h106".U) { scounteren(0)  := csrReadData | csrWriteImmediate }
             is("h180".U) { satp(0)        := csrReadData | csrWriteImmediate }
-            is("h300".U) { mstatus(0)     := csrReadData | csrWriteImmediate }
+            // is("h300".U) { mstatus(0)     := csrReadData | csrWriteImmediate }
             is("h301".U) { misa(0)        := csrReadData | csrWriteImmediate }
             is("h302".U) { medeleg(0)     := csrReadData | csrWriteImmediate }
             is("h303".U) { mideleg(0)     := csrReadData | csrWriteImmediate }
@@ -689,7 +689,7 @@ class decode extends Module {
             is("h042".U) { ucause(0)      := csrReadData & ~csrWriteImmediate }
             is("h106".U) { scounteren(0)  := csrReadData & ~csrWriteImmediate }
             is("h180".U) { satp(0)        := csrReadData & ~csrWriteImmediate }
-            is("h300".U) { mstatus(0)     := csrReadData & ~csrWriteImmediate }
+            // is("h300".U) { mstatus(0)     := csrReadData & ~csrWriteImmediate }
             is("h301".U) { misa(0)        := csrReadData & ~csrWriteImmediate }
             is("h302".U) { medeleg(0)     := csrReadData & ~csrWriteImmediate }
             is("h303".U) { mideleg(0)     := csrReadData & ~csrWriteImmediate }
@@ -727,10 +727,14 @@ class decode extends Module {
     exception := true.B
 
     mepc(0) := writeBackResult.mepc
-    when(currentPrivilege === MMODE.U) {
+    when(writeBackResult.mcause === 11.U) {
+      when(currentPrivilege === MMODE.U) {
+        mcause(0) := writeBackResult.mcause
+      }.otherwise {
+        mcause(0) := writeBackResult.mcause - 3.U
+      }
+    }.otherwise { // ebreak
       mcause(0) := writeBackResult.mcause
-    }.otherwise {
-      mcause(0) := writeBackResult.mcause - 3.U
     }
     mstatus(0) := currentPrivilege
 
@@ -748,10 +752,10 @@ class decode extends Module {
   }.elsewhen(opcode === system.U && fun3 === 0.U && immediate === 770.U ) {
     currentPrivilege := mstatus(0)
     expectedPC := mepc(0)
-    when(fromFetch.fired && fromFetch.pc === fromFetch.expected.pc) {
+    /* when(fromFetch.fired && fromFetch.pc === fromFetch.expected.pc) {
       mstatus(0) := UMODE.U
 
-    }
+    } */
   }.elsewhen(branch.isBranch && isFetchBranch) {
     expectedPC := targetReg
   }.otherwise {
