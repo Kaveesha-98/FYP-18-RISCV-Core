@@ -140,8 +140,8 @@ int main(int argc, char* argv[]) {
     if (keys_rx.reader != keys_rx.writer) { keys_rx.reader += golden_model.load_rx_char(keys_rx.char_buffer[keys_rx.reader]); }
 
     #ifdef LOGGING
-    if (golden_model.get_instruction() == 0x00100073) 
-      break;
+    /* if (golden_model.get_instruction() == 0x00100073) 
+      break; */
 
     //unsigned long current_symbol = golden_model.get_symbom_index(golden_model.get_pc(), old_symbol);
 
@@ -217,7 +217,7 @@ int main(int argc, char* argv[]) {
       cout << dec << bench.tickcount << endl;bench.step(); bench.step(); bench.step(); break;
     }
     sim_prev = golden_model.get_pc();
-    if (0 && (bench.tickcount > 15401938UL)) {
+    if (0 && (bench.tickcount > 17713227UL)) {
       bench.step();
     } else {
       bench.step_nodump();
