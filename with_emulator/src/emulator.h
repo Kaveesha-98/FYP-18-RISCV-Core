@@ -666,7 +666,7 @@ public:
         csrs[MEPC] = pc;
         if (instruction == 0x00100073) {
           csrs[MCAUSE] = 3;
-          csrs[MTVAL] = pc; //instruction;
+          csrs[MTVAL] = 0;//pc; //instruction;
         } else {
           csrs[MCAUSE] = 8 + priviledge;
           csrs[MTVAL] = 0;
