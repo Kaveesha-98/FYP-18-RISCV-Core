@@ -512,7 +512,7 @@ public:
         results[2] = (( (signed) rs1) < ( (signed) rs2));
         results[3] = (rs1 < rs2);
         results[4] = (rs1 ^ rs2);
-        results[5] = (instruction >> 30) ? (((signed) rs1) >> (rs2 & 63)) : (rs1 >> (rs2 & 63));
+        results[5] = (instruction >> 30) ? (((signed long) rs1) >> (rs2 & 63)) : (rs1 >> (rs2 & 63));
         results[6] = rs1 | rs2;
         results[7] = rs1 & rs2;
       }
