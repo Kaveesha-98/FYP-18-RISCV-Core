@@ -166,6 +166,39 @@ class simulator {
     if (tb -> robOut_commitFired) { return 0; } else { printf("TIMEOUT IN SIMULATOR!!!\n"); return 1; }
   }
 
+  int step_nodump() {
+    /* while (1) { // runs until a instruction is completed
+      if (tb -> robOut_commitFired){
+        prev_pc = tb -> robOut_pc;
+        tick_nodump(++tickcount, tb, tfp);
+        if (tb ->putChar_valid) { cout << (char)(tb -> putChar_byte) << flush; }
+        break;
+      }
+      
+      tick_nodump(++tickcount, tb, tfp);
+
+      if (tb ->putChar_valid) { cout << (char)(tb -> putChar_byte) << flush; }
+    } */
+    tick_nodump(++tickcount, tb, tfp);
+    #ifndef STEP_TIMEOUT
+    while (!(tb -> robOut_commitFired)) {
+    #else
+    for (int i = 0; !(tb -> robOut_commitFired) && i < STEP_TIMEOUT; i++) {
+    #endif
+    #ifdef SHOW_TERMINAL
+      //if (tb ->putChar_valid) { cout << tb -> putChar_byte << flush; }
+    #endif
+      tick_nodump(++tickcount, tb, tfp);
+    }
+    
+    #ifdef SHOW_TERMINAL
+    //if (tb ->putChar_valid) { cout << tb -> putChar_byte << flush; }
+    #endif
+    // return 1 indicate timeout
+    prev_pc = tb -> robOut_pc;
+    if (tb -> robOut_commitFired) { return 0; } else { printf("TIMEOUT IN SIMULATOR!!!\n"); return 1; }
+  }
+
   int check_registers(unsigned long *correct) {
     if ( tb -> registersOut_1 != correct[1] ) { return 1; }
     if ( tb -> registersOut_2 != correct[2] ) { return 2; }
