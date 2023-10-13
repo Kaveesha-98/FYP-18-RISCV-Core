@@ -223,7 +223,7 @@ class exec extends Module {
     robPushBuffer.robAddr := bufferedEntries(0).robAddr
     robPushBuffer.writeData := bufferedEntries(0).writeData
     robPushBuffer.instruction := bufferedEntries(0).instruction
-    robPushBuffer.execptionOccured := bufferedEntries(0).instruction === 115.U
+    robPushBuffer.execptionOccured := bufferedEntries(0).instruction(6, 0) === "h73".U
   }
 
   when(robPushBuffer.waiting) {
@@ -240,7 +240,7 @@ class exec extends Module {
     passToMem := !bufferedEntries(0).free && (((bufferedEntries(0).instruction(6, 2) === BitPat("b0?0??")) && (bufferedEntries(0).instruction(6, 2) =/= BitPat("b00011")) ) && updateCurrentEntry) 
   }
   toRob.execptionOccured := robPushBuffer.execptionOccured
-  toRob.mcause := 11.U
+  toRob.mcause := Mux(bufferedEntries(0).instruction === 115.U, 11.U, 3.U)
 }
 
 object exec extends App {
