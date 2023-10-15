@@ -256,10 +256,14 @@ class dCache extends Module {
     .elsewhen(results(next).valid && results(next).instruction(6, 2) =/= 0.U) {
 
       results(next).valid := !(lowLevelMem.BVALID && lowLevelMem.BREADY) || results(next).instruction(3, 2) === 3.U
-      when(results(next).instruction(3, 2) === 3.U && (Cat(results(next).instruction(28, 27), results(next).instruction(3, 2)) =/= "b1011".U)){
+      when(
+        results(next).instruction(3, 2) === 3.U && (Cat(results(next).instruction(28, 27), results(next).instruction(3, 2)) =/= "b1011".U) &&
+        ((Cat(results(next).instruction(28, 27), results(next).instruction(3, 2)) =/= "b1111".U) || scPass)
+      ){
         results(next).instruction := Mux((lowLevelMem.BVALID && lowLevelMem.BREADY), Cat(results(next).instruction(31, 7), 3.U(7.W)), results(next).instruction)
         when((Cat(results(next).instruction(28, 27), results(next).instruction(3, 2)) === "b1111".U)) {
           results(next).byteAlignedData := 0.U
+          results(next).instruction := Cat("b00100".U(5.W), results(next).instruction(26, 0))
         }
       }.elsewhen((((Cat(results(next).instruction(28, 27), results(next).instruction(3, 2)) === "b1111".U) && !scPass) || (Cat(results(next).instruction(28, 27), results(next).instruction(3, 2)) === "b1011".U)) && !(awvalid || wvalid || bready)) {
         results(next).instruction := Cat(results(next).instruction(31, 7), 3.U(7.W))
