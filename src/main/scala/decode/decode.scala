@@ -484,7 +484,10 @@ class decode extends Module {
   val mhartid = Mem(1, UInt(dataWidth.W))
 
 //  csrFile(MSTATUS.U) := (csrFile(MSTATUS.U) & "h0000000000001800".U) | "h0000002200000000".U
-  mstatus(0) := (mstatus(0) & "h0000000000001800".U) | "h0000000a00000000".U
+  // mstatus(0) := (mstatus(0) & "h0000000000001800".U) | "h0000000a00000000".U
+  when(reset.asBool) {
+    mstatus(0) := UMODE.U
+  }
   misa(0) := "b100000001000100000001".U(64.W) + (2.U(64.W) << 62)
 
   val csrReadData = WireDefault(0.U(dataWidth.W))
@@ -516,7 +519,9 @@ class decode extends Module {
   }
 
   val csrWriteData = registerFile(rs1Addr)
-  val csrWriteImmediate = rs1Addr & "h0000_0000_0000_001f".U
+  val csrWriteImmediate = Cat(0.U((27 + 32).W), rs1Addr)// rs1Addr & "h0000_0000_0000_001f".U
+  val csrWriteOut = IO(Output(csrWriteImmediate.cloneType))
+  csrWriteOut := csrWriteImmediate
   delayReg := csrReadData
   when(
     ((RegNext((isCSR && !waitToCommit) && ((isCSR && !waitToCommit) =/= RegNext(isCSR && !waitToCommit, false.B)), false.B)) ||
@@ -541,7 +546,7 @@ class decode extends Module {
             is("h042".U) { ucause(0) := csrWriteData }
             is("h106".U) { scounteren(0) := csrWriteData }
             is("h180".U) { satp(0) := csrWriteData }
-            // is("h300".U) { mstatus(0) := csrWriteData }
+            is("h300".U) { mstatus(0) := csrWriteData }
             is("h301".U) { misa(0) := csrWriteData }
             is("h302".U) { medeleg(0) := csrWriteData }
             is("h303".U) { mideleg(0) := csrWriteData }
@@ -570,7 +575,7 @@ class decode extends Module {
             is("h042".U) { ucause(0)      := csrReadData | csrWriteData }
             is("h106".U) { scounteren(0)  := csrReadData | csrWriteData }
             is("h180".U) { satp(0)        := csrReadData | csrWriteData }
-            // is("h300".U) { mstatus(0)     := csrReadData | csrWriteData }
+            is("h300".U) { mstatus(0)     := csrReadData | csrWriteData }
             is("h301".U) { misa(0)        := csrReadData | csrWriteData }
             is("h302".U) { medeleg(0)     := csrReadData | csrWriteData }
             is("h303".U) { mideleg(0)     := csrReadData | csrWriteData }
@@ -600,7 +605,7 @@ class decode extends Module {
             is("h042".U) { ucause(0)      := csrReadData & ~csrWriteData }
             is("h106".U) { scounteren(0)  := csrReadData & ~csrWriteData }
             is("h180".U) { satp(0)        := csrReadData & ~csrWriteData }
-            // is("h300".U) { mstatus(0)     := csrReadData & ~csrWriteData }
+            is("h300".U) { mstatus(0)     := csrReadData & ~csrWriteData }
             is("h301".U) { misa(0)        := csrReadData & ~csrWriteData }
             is("h302".U) { medeleg(0)     := csrReadData & ~csrWriteData }
             is("h303".U) { mideleg(0)     := csrReadData & ~csrWriteData }
@@ -630,7 +635,7 @@ class decode extends Module {
             is("h042".U) { ucause(0)      := csrWriteImmediate }
             is("h106".U) { scounteren(0)  := csrWriteImmediate }
             is("h180".U) { satp(0)        := csrWriteImmediate }
-            // is("h300".U) { mstatus(0)     := csrWriteImmediate }
+            is("h300".U) { mstatus(0)     := csrWriteImmediate }
             is("h301".U) { misa(0)        := csrWriteImmediate }
             is("h302".U) { medeleg(0)     := csrWriteImmediate }
             is("h303".U) { mideleg(0)     := csrWriteImmediate }
@@ -659,7 +664,7 @@ class decode extends Module {
             is("h042".U) { ucause(0)      := csrReadData | csrWriteImmediate }
             is("h106".U) { scounteren(0)  := csrReadData | csrWriteImmediate }
             is("h180".U) { satp(0)        := csrReadData | csrWriteImmediate }
-            // is("h300".U) { mstatus(0)     := csrReadData | csrWriteImmediate }
+            is("h300".U) { mstatus(0)     := csrReadData | csrWriteImmediate }
             is("h301".U) { misa(0)        := csrReadData | csrWriteImmediate }
             is("h302".U) { medeleg(0)     := csrReadData | csrWriteImmediate }
             is("h303".U) { mideleg(0)     := csrReadData | csrWriteImmediate }
@@ -689,7 +694,10 @@ class decode extends Module {
             is("h042".U) { ucause(0)      := csrReadData & ~csrWriteImmediate }
             is("h106".U) { scounteren(0)  := csrReadData & ~csrWriteImmediate }
             is("h180".U) { satp(0)        := csrReadData & ~csrWriteImmediate }
-            // is("h300".U) { mstatus(0)     := csrReadData & ~csrWriteImmediate }
+            is("h300".U) { 
+              mstatus(0)     := csrReadData & ~csrWriteImmediate 
+              println(csrWriteImmediate)
+            }
             is("h301".U) { misa(0)        := csrReadData & ~csrWriteImmediate }
             is("h302".U) { medeleg(0)     := csrReadData & ~csrWriteImmediate }
             is("h303".U) { mideleg(0)     := csrReadData & ~csrWriteImmediate }
@@ -723,7 +731,9 @@ class decode extends Module {
 
   /** Exceptions handling */
   /** -------------------------------------------------------------------------------------------------------------------- */
-  when(writeBackResult.fired && writeBackResult.execptionOccured) {
+
+  val mretCall = RegInit(false.B)
+  when(writeBackResult.fired && writeBackResult.execptionOccured && !mretCall) {
     exception := true.B
 
     mepc(0) := writeBackResult.mepc
@@ -739,7 +749,10 @@ class decode extends Module {
     mstatus(0) := currentPrivilege
 
     currentPrivilege := MMODE.U
-  }
+  }/* .elsewhen(writeBackResult.fired && writeBackResult.execptionOccured) {
+    // mret call
+
+  } */
 
   when(exception && fromFetch.fired && fromFetch.pc === fromFetch.expected.pc) {
     exception := false.B
@@ -752,6 +765,7 @@ class decode extends Module {
   }.elsewhen(opcode === system.U && fun3 === 0.U && immediate === 770.U ) {
     currentPrivilege := mstatus(0)
     expectedPC := mepc(0)
+    mstatus(0) := (mstatus(0) & (~(3.U(64.W) << 11))) | (1.U(64.W) << 7)
     /* when(fromFetch.fired && fromFetch.pc === fromFetch.expected.pc) {
       mstatus(0) := UMODE.U
 
@@ -769,7 +783,25 @@ class decode extends Module {
   val decodeIns = IO(Output(UInt(32.W)))
   decodeIns := decodeIssueBuffer.instruction
 
+  val noCall :: callDecode :: callIssue :: callCommit :: Nil = Enum(4)
 
+  val procCalls = RegInit(noCall)
+  switch(procCalls) {
+    is(noCall) { 
+      when(fromFetch.fired && (fromFetch.instruction(6, 0) === "b1110011".U) && (fromFetch.instruction(14, 12) === 0.U)) {
+        procCalls := callDecode
+        mretCall := (fromFetch.instruction(31, 20) === "b001100000010".U)
+      } 
+    }
+    is(callDecode) {
+      fromFetch.ready := false.B
+      when(toExec.fired && (toExec.instruction(6, 0) === "b1110011".U) && (toExec.instruction(14, 12) === 0.U)) { procCalls := callIssue }
+    }
+    is(callIssue) {
+      fromFetch.ready := false.B
+      when(writeBackResult.fired && (writeBackResult.execptionOccured)) { procCalls := noCall }
+    }
+  }
 //  var i = 0;
 //
 //  for(i <- 0 to 31){
