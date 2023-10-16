@@ -255,6 +255,9 @@ class core extends Module {
   }.otherwise {
     ziscsrIn := decode.toExec.fired && (decode.toExec.instruction(6, 0) === "h73".U)
   }
+
+  val sampleOut = IO(Output(decode.csrWriteOut.cloneType))
+  sampleOut := decode.csrWriteOut
 }
 
 /* trait registersOut extends core {

@@ -43,6 +43,9 @@ class system extends Module {
 
   val robOut = IO(Output(cpu.robOut.cloneType))
   robOut := cpu.robOut
+
+  val sampleOut = IO(Output(cpu.sampleOut.cloneType))
+  sampleOut := cpu.sampleOut
 }
 
 object system extends App {
