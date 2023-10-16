@@ -423,7 +423,7 @@ public:
     if (
       ((csrs[MSTATUS]&8) || (priviledge!=3)) && 
       ((csrs[MIE]) & (1UL << 3)) &&
-      (rx_ready)
+      (rx_ready) && 0
     ) { 
       csrs[MEPC] = pc;
       csrs[MCAUSE] = 11 | (1UL << 63);
@@ -446,7 +446,7 @@ public:
     if (
       ((csrs[MSTATUS]&8) || (priviledge!=3)) && 
       ((csrs[MIE]) & (1UL << 7)) &&
-      (mtime > mtimecmp)
+      (mtime > mtimecmp) && 0
     ) { 
       csrs[MEPC] = pc;
       csrs[MCAUSE] = 7 | (1UL << 63);

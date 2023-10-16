@@ -131,8 +131,8 @@ int main(int argc, char* argv[]) {
     if (keys_rx.reader != keys_rx.writer) { keys_rx.reader += golden_model.load_rx_char(keys_rx.char_buffer[keys_rx.reader]); }
 
     #ifdef LOGGING
-    if (golden_model.get_instruction() == 0x00100073) 
-      break;
+    /* if (golden_model.get_instruction() == 0x00100073) 
+      break; */
 
     //unsigned long current_symbol = golden_model.get_symbom_index(golden_model.get_pc(), old_symbol);
 
