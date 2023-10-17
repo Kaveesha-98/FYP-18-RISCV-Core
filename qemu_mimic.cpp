@@ -124,7 +124,7 @@ int main(int argc, char* argv[]) {
   keys_rx.reader = 0;
   keys_rx.writer = 0;
   unsigned long gprs[32];
-  bench.set_probe(0x0247e40UL+0x070U);
+  bench.set_probe(0x04782b8UL+0x00U);
   bench.step();
   unsigned long sim_prev = 0x80000000UL;
   while (1) {
@@ -153,7 +153,7 @@ int main(int argc, char* argv[]) {
     } */
     outFile <<  setfill('0') << setw(16) << dec << bench.tickcount << " ";
     outFile <<  setfill('0') << setw(16) << hex << golden_model.get_pc() << " ";
-    outFile <<  setfill('0') << setw(16) << hex << golden_model.fetch_long(0x80247e40UL+0x070U) << " ";
+    outFile <<  setfill('0') << setw(16) << hex << golden_model.fetch_long(0x804782b8UL+0x00U) << " ";
     outFile <<  setfill('0') << setw(16) << hex << bench.get_probe() << endl;
     /* switch (golden_model.check_for_mem_access(&mem_address, &data))
     {
@@ -217,7 +217,7 @@ int main(int argc, char* argv[]) {
       cout << dec << bench.tickcount << endl;bench.step(); bench.step(); bench.step(); break;
     }
     sim_prev = golden_model.get_pc();
-    if (0 && (bench.tickcount > 20417633UL)) {
+    if (0 && (bench.tickcount > 59592757UL)) {
       bench.step();
     } else {
       bench.step_nodump();
