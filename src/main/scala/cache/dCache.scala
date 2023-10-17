@@ -325,7 +325,7 @@ class dCache extends Module {
   }
 
   when(!requests(buffered).valid) {
-    requests(buffered).valid :=  requests(next).valid && (processingMod || cacheStalled) && (pipelineMemAccess.req.ready && pipelineMemAccess.req.valid) //(cacheStalled || results(buffered).valid) && (pipelineMemAccess.req.ready && pipelineMemAccess.req.valid) && requests(next).valid && processingMod
+    requests(buffered).valid :=  requests(next).valid && (processingMod || cacheStalled || results(buffered).valid) && (pipelineMemAccess.req.ready && pipelineMemAccess.req.valid) //(cacheStalled || results(buffered).valid) && (pipelineMemAccess.req.ready && pipelineMemAccess.req.valid) && requests(next).valid && processingMod
     requests(buffered).address := pipelineMemAccess.req.bits.address
     requests(buffered).instruction := pipelineMemAccess.req.bits.instruction
     requests(buffered).robAddr := pipelineMemAccess.req.bits.robAddr
