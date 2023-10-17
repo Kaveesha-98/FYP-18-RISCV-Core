@@ -249,10 +249,23 @@ class dCache extends Module {
   cache.io.write_mask := cacheFill.mask
   cache.io.clock := clock
   cache.io.reset := reset
+  def getCacheIndex(x: UInt) = x(dCacheLineWidth + dCacheDoubleWordOffsetWidth + 3 - 1, dCacheDoubleWordOffsetWidth + 3)
+  def getCacheTag(x: UInt) = x(31, dCacheLineWidth + dCacheDoubleWordOffsetWidth + 3)
 
   val cacheStalled = cacheMissed || (pipelineMemAccess.resp.valid && !pipelineMemAccess.resp.ready)
   when((!cacheMissed && (pipelineMemAccess.resp.ready || results(next).instruction(6, 2) =/= 0.U)) || !results(next).valid) {
-    when(results(buffered).valid) { results(next) := results(buffered) }
+    when(results(buffered).valid) { 
+      results(next) := results(buffered)
+      // If tags of addresses are not equal but index is the same then, then the new request is a definite miss because
+      // this is a direct mapped cache
+      when(
+        results(next).valid && 
+        (getCacheIndex(results(next).address) === getCacheIndex(results(buffered).address)) &&
+        (getCacheTag(results(next).address) =/= getCacheTag(results(buffered).address)) 
+      ){
+        results(next).tagValid := false.B
+      }
+    }
     .elsewhen(results(next).valid && results(next).instruction(6, 2) =/= 0.U) {
 
       results(next).valid := !(lowLevelMem.BVALID && lowLevelMem.BREADY) || results(next).instruction(3, 2) === 3.U
@@ -298,10 +311,19 @@ class dCache extends Module {
     results(buffered).byteAlignedData := cache.io.byte_aligned_data
     results(buffered).robAddr := requests(servicing).robAddr
     results(buffered).writeData := requests(servicing).writeData
-  }.elsewhen(cacheMissed && cacheFill.valid && (results(next).address(31, iCacheOffsetWidth + 2) === results(buffered).address(31, iCacheOffsetWidth + 2))) {
-    results(buffered).byteAlignedData := (VecInit.tabulate(1 << dCacheDoubleWordOffsetWidth)(i => cacheFill.block(63 + 64*i, 64*i)))(results(buffered).address(dCacheDoubleWordOffsetWidth+3, 3))
-    results(buffered).tag := results(next).address(iCacheTagWidth + iCacheLineWidth + iCacheOffsetWidth + 2, iCacheLineWidth + iCacheOffsetWidth + 2)
-    results(buffered).tagValid := true.B
+  }.elsewhen(cacheMissed && cacheFill.valid) {
+    when(results(next).address(31, iCacheOffsetWidth + 2) === results(buffered).address(31, iCacheOffsetWidth + 2)) {
+      results(buffered).byteAlignedData := (VecInit.tabulate(1 << dCacheDoubleWordOffsetWidth)(i => cacheFill.block(63 + 64*i, 64*i)))(results(buffered).address(dCacheDoubleWordOffsetWidth+3, 3))
+      results(buffered).tag := results(next).address(iCacheTagWidth + iCacheLineWidth + iCacheOffsetWidth + 2, iCacheLineWidth + iCacheOffsetWidth + 2)
+      results(buffered).tagValid := true.B
+    }
+    when(
+      (getCacheIndex(results(next).address) === getCacheIndex(results(buffered).address)) &&
+      (getCacheTag(results(next).address) =/= getCacheTag(results(buffered).address)) 
+    ){
+      results(buffered).tagValid := false.B
+    }
+
   }.elsewhen(!cacheStalled) {
     results(buffered).valid := false.B
   }
