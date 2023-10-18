@@ -217,7 +217,7 @@ int main(int argc, char* argv[]) {
       cout << dec << bench.tickcount << endl;bench.step(); bench.step(); bench.step(); break;
     }
     sim_prev = golden_model.get_pc();
-    if (0 && (bench.tickcount > 59592757UL)) {
+    if (0 && (bench.tickcount > 120521020UL)) {
       bench.step();
     } else {
       bench.step_nodump();
