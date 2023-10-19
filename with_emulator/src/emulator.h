@@ -108,6 +108,25 @@ public:
     return 1;
   }
 
+  void set_register_with_value(__uint8_t rd, __uint64_t value) {gprs[rd] = value;}
+
+  int is_peripheral_read() {
+    // cout << "why" << endl;
+    // indicates a peripheral access in the next instruction to be executed
+    __uint32_t instruction = get_instruction();
+    // if (pc  == 0x801b2488UL) {printf("%016lx", (instruction&0x7f)); cout << endl;}
+    if ((instruction&0x7f) == 0b0000011) {
+      unsigned long rs1 = gprs[(instruction >> 15) & 31];
+      unsigned long immediate_i_type = (0UL-((instruction >> 20) & 0x00000800)) | ((instruction >> 20) & 0x00000FFF);
+      // peripheral access is not expected for atomics
+      __uint64_t address = rs1 + immediate_i_type;
+      // if (pc  == 0x801b2488UL) {printf("%016lx", address); cout << endl;}
+      return (((address >= RAM_HIGH) || (address < RAM_BASE)) ? 1 : 0); // return 1 for peripheral access 
+    } else {
+      return 0; // no access to peripherals
+    }
+  }
+
   void set_mtime(unsigned long current_time) { mtime = current_time; }
 
   /**
