@@ -217,13 +217,20 @@ int main(int argc, char* argv[]) {
       cout << dec << bench.tickcount << endl;bench.step(); bench.step(); bench.step(); break;
     }
     sim_prev = golden_model.get_pc();
-    if (0 && (bench.tickcount > 120521020UL)) {
+    if (0 && (bench.tickcount > 13833689UL)) {
       bench.step();
     } else {
       bench.step_nodump();
     }
     // bench.step();
-    golden_model.step();
+    if (golden_model.is_peripheral_read()) {
+      // cout << "peripheral read" << endl;
+      __uint32_t p_instruction = golden_model.get_instruction();
+      golden_model.step();
+      golden_model.set_register_with_value((p_instruction>>7)&0x1f, bench.get_register_value((p_instruction>>7)&0x1f));
+    } else{
+      golden_model.step();
+    }
     while (
       ((golden_model.get_instruction() & 0x0000007f) == 0x73) && 
       (golden_model.get_instruction() & 0x00007000)
