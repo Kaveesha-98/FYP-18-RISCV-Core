@@ -51,8 +51,19 @@ class uart extends Module {
     readRequestBuffer.len := readRequestBuffer.len - 1.U
     when(!readRequestBuffer.len.orR) { readRequestBuffer.valid := false.B }
   }
+  val mtime = RegInit(0.U(64.W))
+  mtime := mtime + 1.U
+  val mtimeRead = Reg(UInt(64.W))
+  when(client.ARREADY && client.ARVALID) {
+    mtimeRead := mtime
+  }
 
-  client.RDATA := Mux((readRequestBuffer.address&("hff".U)) === ("h2c".U), 8.U, 0.U)
+  // client.RDATA := Mux((readRequestBuffer.address&("hff".U)) === ("h2c".U), 8.U, 0.U)
+  client.RDATA := 8.U
+  switch(readRequestBuffer.address) {
+    is("he000002c".U) { client.RDATA := 8.U }
+    is("h0200bff8".U) { client.RDATA := Mux(readRequestBuffer.len.orR, mtimeRead(31, 0), mtimeRead(63, 32)) }
+  }
   client.RID := readRequestBuffer.id
   client.RLAST := !readRequestBuffer.len.orR
   client.RRESP := 0.U
