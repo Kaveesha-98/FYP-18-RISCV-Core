@@ -50,6 +50,77 @@ class simulator {
   uint64_t  prev_pc;
   unsigned        tickcount;
 
+  __uint64_t get_register_value(__uint8_t rd) {
+    switch (rd) {
+    case 0:
+      return tb -> registersOut_0;
+    case 1:
+      return tb -> registersOut_1;
+    case 2:
+      return tb -> registersOut_2;
+    case 3:
+      return tb -> registersOut_3;
+    case 4:
+      return tb -> registersOut_4;
+    case 5:
+      return tb -> registersOut_5;
+    case 6:
+      return tb -> registersOut_6;
+    case 7:
+      return tb -> registersOut_7;
+    case 8:
+      return tb -> registersOut_8;
+    case 9:
+      return tb -> registersOut_9;
+    case 10:
+      return tb -> registersOut_10;
+    case 11:
+      return tb -> registersOut_11;
+    case 12:
+      return tb -> registersOut_12;
+    case 13:
+      return tb -> registersOut_13;
+    case 14:
+      return tb -> registersOut_14;
+    case 15:
+      return tb -> registersOut_15;
+    case 16:
+      return tb -> registersOut_16;
+    case 17:
+      return tb -> registersOut_17;
+    case 18:
+      return tb -> registersOut_18;
+    case 19:
+      return tb -> registersOut_19;
+    case 20:
+      return tb -> registersOut_20;
+    case 21:
+      return tb -> registersOut_21;
+    case 22:
+      return tb -> registersOut_22;
+    case 23:
+      return tb -> registersOut_23;
+    case 24:
+      return tb -> registersOut_24;
+    case 25:
+      return tb -> registersOut_25;
+    case 26:
+      return tb -> registersOut_26;
+    case 27:
+      return tb -> registersOut_27;
+    case 28:
+      return tb -> registersOut_28;
+    case 29:
+      return tb -> registersOut_29;
+    case 30:
+      return tb -> registersOut_30;
+    case 31:
+      return tb -> registersOut_31;
+    default:
+      return 0;
+    }
+  }
+
   void init(
     std::string image_name = "Image",
     std::string dtb_name = "qemu.dtb",
