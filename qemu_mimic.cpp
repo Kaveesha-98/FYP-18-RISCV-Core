@@ -2,6 +2,7 @@
 #include <fstream>
 #include <string>
 #include "with_emulator/src/emulator.h"
+#undef SHOW_TERMINAL
 #include "simulator/src/simulator.h"
 #include <chrono>
 #include <unistd.h>
@@ -217,11 +218,13 @@ int main(int argc, char* argv[]) {
       cout << dec << bench.tickcount << endl;bench.step(); bench.step(); bench.step(); break;
     }
     sim_prev = golden_model.get_pc();
-    if (0 && (bench.tickcount > 13833689UL)) {
-      bench.step();
+    int x = 1;
+    if (0 && (bench.tickcount > 19816334UL)) {
+      x = bench.step();
     } else {
-      bench.step_nodump();
+      x = bench.step_nodump();
     }
+    if (x) { break; }
     // bench.step();
     if (golden_model.is_peripheral_read()) {
       // cout << "peripheral read" << endl;
