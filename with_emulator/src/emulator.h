@@ -13,9 +13,9 @@ using namespace std::chrono;
 //#define DEBUG
 
 #define RAM_SIZE 536870912
-#define PROGRAM_INIT 0x87ffff00UL // starting pc of the first instruction run
-#define RAM_BASE 0x80000000UL
-#define RAM_HIGH 0x90000000UL
+#define PROGRAM_INIT 0x10000000UL// starting pc of the first instruction run
+#define RAM_BASE 0x10000000UL
+#define RAM_HIGH 0x20000000UL
 #define BOOTROM_SIZE 1048576
 #define BOOTROM_BASE 0x1000UL
 
@@ -295,6 +295,10 @@ public:
       {
         return 8;
       }
+      if (address == 0xe000102cUL)
+      {
+        return 8;
+      }
       if (address == 0x10000005)
       { 
         rx_ready = 0;
@@ -417,6 +421,10 @@ public:
       #endif */
       #ifdef SHOW_TERMINAL
         if (address == 0xe0000030UL){
+          printf("%c", (char) rs2&0xff);
+          cout << flush;
+        }
+        if (address == 0xe0001030UL){
           printf("%c", (char) rs2&0xff);
           cout << flush;
         }
@@ -678,7 +686,7 @@ public:
         results[5] = results[4];
         results[6] = results[0] | results[4];
         results[7] = results[0] & (~results[4]);
-        csr_write((instruction >> 20) & 0xfff, results[(instruction >> 12) & 7]);
+        if (((instruction >> 15) & 0x1f) || !(instruction & (1 << 13))) { csr_write((instruction >> 20) & 0xfff, results[(instruction >> 12) & 7]); }
         pc = pc + 4;
       } else if (((instruction >> 7) == 0) || (instruction == 0x00100073)) {
         // ecall
