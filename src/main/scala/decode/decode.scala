@@ -487,6 +487,7 @@ class decode extends Module {
   // mstatus(0) := (mstatus(0) & "h0000000000001800".U) | "h0000000a00000000".U
   when(reset.asBool) {
     mstatus(0) := UMODE.U
+    mscratch(0) := 0.U
   }
   misa(0) := "b100000001000100000001".U(64.W) + (2.U(64.W) << 62)
 
@@ -534,8 +535,9 @@ class decode extends Module {
       
       registerFile(rdAddr) := delayReg
     }
+    def mstatusWrite(x: UInt) = Cat(mstatus(0)(63, 13), x(12, 0))
 
-    when(fetchIssueBuffer.instruction(19, 15).orR){
+    when(fetchIssueBuffer.instruction(19, 15).orR || !fetchIssueBuffer.instruction(13).asBool){
       switch(fun3) {
         is("b001".U) {
   //        csrFile(immediate) := csrWriteData
@@ -546,7 +548,7 @@ class decode extends Module {
             is("h042".U) { ucause(0) := csrWriteData }
             is("h106".U) { scounteren(0) := csrWriteData }
             is("h180".U) { satp(0) := csrWriteData }
-            is("h300".U) { mstatus(0) := csrWriteData }
+            is("h300".U) { mstatus(0) := mstatusWrite(csrWriteData) }
             is("h301".U) { misa(0) := csrWriteData }
             is("h302".U) { medeleg(0) := csrWriteData }
             is("h303".U) { mideleg(0) := csrWriteData }
@@ -575,7 +577,7 @@ class decode extends Module {
             is("h042".U) { ucause(0)      := csrReadData | csrWriteData }
             is("h106".U) { scounteren(0)  := csrReadData | csrWriteData }
             is("h180".U) { satp(0)        := csrReadData | csrWriteData }
-            is("h300".U) { mstatus(0)     := csrReadData | csrWriteData }
+            is("h300".U) { mstatus(0) := mstatusWrite(csrReadData | csrWriteData) }
             is("h301".U) { misa(0)        := csrReadData | csrWriteData }
             is("h302".U) { medeleg(0)     := csrReadData | csrWriteData }
             is("h303".U) { mideleg(0)     := csrReadData | csrWriteData }
@@ -605,7 +607,7 @@ class decode extends Module {
             is("h042".U) { ucause(0)      := csrReadData & ~csrWriteData }
             is("h106".U) { scounteren(0)  := csrReadData & ~csrWriteData }
             is("h180".U) { satp(0)        := csrReadData & ~csrWriteData }
-            is("h300".U) { mstatus(0)     := csrReadData & ~csrWriteData }
+            is("h300".U) { mstatus(0) := mstatusWrite(csrReadData & ~csrWriteData) }
             is("h301".U) { misa(0)        := csrReadData & ~csrWriteData }
             is("h302".U) { medeleg(0)     := csrReadData & ~csrWriteData }
             is("h303".U) { mideleg(0)     := csrReadData & ~csrWriteData }
@@ -635,7 +637,7 @@ class decode extends Module {
             is("h042".U) { ucause(0)      := csrWriteImmediate }
             is("h106".U) { scounteren(0)  := csrWriteImmediate }
             is("h180".U) { satp(0)        := csrWriteImmediate }
-            is("h300".U) { mstatus(0)     := csrWriteImmediate }
+            is("h300".U) { mstatus(0) := mstatusWrite(csrWriteImmediate) }
             is("h301".U) { misa(0)        := csrWriteImmediate }
             is("h302".U) { medeleg(0)     := csrWriteImmediate }
             is("h303".U) { mideleg(0)     := csrWriteImmediate }
@@ -664,7 +666,7 @@ class decode extends Module {
             is("h042".U) { ucause(0)      := csrReadData | csrWriteImmediate }
             is("h106".U) { scounteren(0)  := csrReadData | csrWriteImmediate }
             is("h180".U) { satp(0)        := csrReadData | csrWriteImmediate }
-            is("h300".U) { mstatus(0)     := csrReadData | csrWriteImmediate }
+            is("h300".U) { mstatus(0) := mstatusWrite(csrReadData | csrWriteImmediate) }
             is("h301".U) { misa(0)        := csrReadData | csrWriteImmediate }
             is("h302".U) { medeleg(0)     := csrReadData | csrWriteImmediate }
             is("h303".U) { mideleg(0)     := csrReadData | csrWriteImmediate }
@@ -695,7 +697,7 @@ class decode extends Module {
             is("h106".U) { scounteren(0)  := csrReadData & ~csrWriteImmediate }
             is("h180".U) { satp(0)        := csrReadData & ~csrWriteImmediate }
             is("h300".U) { 
-              mstatus(0)     := csrReadData & ~csrWriteImmediate 
+              mstatus(0) := mstatusWrite(csrReadData & ~csrWriteImmediate)
               println(csrWriteImmediate)
             }
             is("h301".U) { misa(0)        := csrReadData & ~csrWriteImmediate }
@@ -746,7 +748,7 @@ class decode extends Module {
     }.otherwise { // ebreak
       mcause(0) := writeBackResult.mcause
     }
-    mstatus(0) := currentPrivilege
+    mstatus(0) := currentPrivilege | ((mstatus(0)&"h08".U(64.W)) << 4)
 
     currentPrivilege := MMODE.U
   }/* .elsewhen(writeBackResult.fired && writeBackResult.execptionOccured) {
@@ -765,7 +767,7 @@ class decode extends Module {
   }.elsewhen(opcode === system.U && fun3 === 0.U && immediate === 770.U ) {
     currentPrivilege := mstatus(0)
     expectedPC := mepc(0)
-    mstatus(0) := (mstatus(0) & (~(3.U(64.W) << 11))) | (1.U(64.W) << 7)
+    mstatus(0) := (mstatus(0) & (~(3.U(64.W) << 11))) | ("h080".U(64.W)) | ((mstatus(0)&"h080".U(64.W)) >> 4)
     /* when(fromFetch.fired && fromFetch.pc === fromFetch.expected.pc) {
       mstatus(0) := UMODE.U
 
