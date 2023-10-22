@@ -224,13 +224,13 @@ class simulator {
     for (int i = 0; !(tb -> robOut_commitFired) && i < STEP_TIMEOUT; i++) {
     #endif
     #ifdef SHOW_TERMINAL
-      //if (tb ->putChar_valid) { cout << tb -> putChar_byte << flush; }
+      if (tb ->putChar_valid) { cout << tb -> putChar_byte << flush; }
     #endif
       tick(++tickcount, tb, tfp);
     }
     
     #ifdef SHOW_TERMINAL
-    //if (tb ->putChar_valid) { cout << tb -> putChar_byte << flush; }
+    if (tb ->putChar_valid) { cout << tb -> putChar_byte << flush; }
     #endif
     // return 1 indicate timeout
     prev_pc = tb -> robOut_pc;
