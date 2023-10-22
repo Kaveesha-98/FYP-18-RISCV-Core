@@ -62,6 +62,7 @@ class uart extends Module {
   client.RDATA := 8.U
   switch(readRequestBuffer.address) {
     is("he000002c".U) { client.RDATA := 8.U }
+    is("he000102c".U) { client.RDATA := 8.U }
     is("h0200bff8".U) { client.RDATA := Mux(readRequestBuffer.len.orR, mtimeRead(31, 0), mtimeRead(63, 32)) }
   }
   client.RID := readRequestBuffer.id
