@@ -63,8 +63,8 @@ int main(int argc, char* argv[]) {
     printf("kernel loading failed\n");
     return 1;
   }
-  golden_model.load_dtb("resources/qemu.dtb", 0x7e00000UL);
-  golden_model.load_bootrom("resources/build/qemu_rom/boot.bin");
+  //golden_model.load_dtb("resources/qemu.dtb", 0x7e00000UL);
+  //golden_model.load_bootrom("resources/build/qemu_rom/boot.bin");
   golden_model.load_symbols("resources/symbol_names.txt", "resources/symbol_pointers.bin");
   char x;
   golden_model.init();
