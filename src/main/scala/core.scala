@@ -26,8 +26,12 @@ class core extends Module {
   ) */
 
   val decode = Module(new pipeline.decode.decode {
-    val registersOut = IO(Output(Vec(32, UInt(64.W))))
-    registersOut.zipWithIndex.foreach { case (outVal, i) => outVal := registerFile(i) }
+    val registersOut = IO(Output(Vec(33, UInt(64.W))))
+    registersOut.zipWithIndex.foreach { case (outVal, i) => i match {
+      case 32 => registersOut(32) := mstatus(0)
+      case _ => outVal := registerFile(i)
+    }  }
+    
 
     //val robEmpty = IO(Input(Bool()))
   } )
