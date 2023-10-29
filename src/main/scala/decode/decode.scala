@@ -735,7 +735,7 @@ class decode extends Module {
   /** -------------------------------------------------------------------------------------------------------------------- */
 
   val mretCall = RegInit(false.B)
-  when(writeBackResult.fired && writeBackResult.execptionOccured && !mretCall) {
+  when(writeBackResult.fired && writeBackResult.execptionOccured && !mretCall && (writeBackResult.mcause === 11.U)) {
     exception := true.B
 
     mepc(0) := writeBackResult.mepc
@@ -751,10 +751,12 @@ class decode extends Module {
     mstatus(0) := currentPrivilege | ((mstatus(0)&"h08".U(64.W)) << 4)
 
     currentPrivilege := MMODE.U
-  }/* .elsewhen(writeBackResult.fired && writeBackResult.execptionOccured) {
+  }.elsewhen(writeBackResult.fired && writeBackResult.execptionOccured && mretCall) {
     // mret call
-
-  } */
+    currentPrivilege := mstatus(0)
+    // expectedPC := mepc(0)
+    mstatus(0) := (mstatus(0) & (~(3.U(64.W) << 11))) | ("h080".U(64.W)) | ((mstatus(0)&"h080".U(64.W)) >> 4)
+  }
 
   when(exception && fromFetch.fired && fromFetch.pc === fromFetch.expected.pc) {
     exception := false.B
@@ -765,9 +767,9 @@ class decode extends Module {
 
     expectedPC := mtvec(0)
   }.elsewhen(opcode === system.U && fun3 === 0.U && immediate === 770.U ) {
-    currentPrivilege := mstatus(0)
+    //currentPrivilege := mstatus(0)
     expectedPC := mepc(0)
-    mstatus(0) := (mstatus(0) & (~(3.U(64.W) << 11))) | ("h080".U(64.W)) | ((mstatus(0)&"h080".U(64.W)) >> 4)
+    //mstatus(0) := (mstatus(0) & (~(3.U(64.W) << 11))) | ("h080".U(64.W)) | ((mstatus(0)&"h080".U(64.W)) >> 4)
     /* when(fromFetch.fired && fromFetch.pc === fromFetch.expected.pc) {
       mstatus(0) := UMODE.U
 
