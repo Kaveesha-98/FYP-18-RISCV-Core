@@ -1,7 +1,7 @@
 #include <iostream>
 #include <fstream>
 #include <string>
-#include "with_emulator/src/emulator.h"
+#include "fyp18-riscv-emulator/src/emulator.h"
 #undef SHOW_TERMINAL
 #include "simulator/src/simulator.h"
 #include <chrono>
@@ -22,7 +22,7 @@ struct keystroke_buffer {
   unsigned char reader, writer, char_buffer[128];
 };
 
-void enable_raw_mode() {
+/* void enable_raw_mode() {
   termios term;
   tcgetattr(0, &term);
   term.c_lflag &= ~(ICANON | ECHO); // Disable echo as well
@@ -34,7 +34,7 @@ void disable_raw_mode() {
   tcgetattr(0, &term);
   term.c_lflag |= ICANON | ECHO;
   tcsetattr(0, TCSANOW, &term);
-}
+} */
 
 // Define the function to be called when ctrl-c (SIGINT) is sent to process
 void signal_callback_handler(int signum) {
@@ -45,36 +45,40 @@ void signal_callback_handler(int signum) {
   exit(signum);
 }
 
-int kbhit()
+/* int kbhit()
 {
   int byteswaiting;
   ioctl(0, FIONREAD, &byteswaiting);
   return byteswaiting > 0;
-}
+} */
+
+// emulator emu;
 
 int main(int argc, char* argv[]) {
   // Name of kernel image must be provided at run time
-  if (argc == 1) {
+  /* if (argc == 1) {
     printf("Name of kerenl image must be provided at run time\n");
     return 1;
   } else if (argc > 2) {
     printf("Too many arguments provided\n");
-  }
+  } */
 
-  if (!golden_model.load_kernel(argv[1])) {
+  /* if (!golden_model.load_kernel(argv[1])) {
     printf("kernel loading failed\n");
     return 1;
-  }
+  } */
+
   simulator bench;
-  bench.init(argv[1], argv[2], argv[3]);
+  bench.init("fyp18-riscv-emulator/src/Image", argv[2], argv[3]);
   printf("bench inititated!\n");
   cout << endl;
 
-  golden_model.load_dtb(argv[2], 0x7e00000UL);
-  golden_model.load_bootrom(argv[3]);
+  // golden_model.load_dtb(argv[2], 0x7e00000UL);
+  // golden_model.load_bootrom(argv[3]);
   // golden_model.load_symbols("resources/symbol_names.txt", "resources/symbol_pointers.bin");
   char x;
-  golden_model.init();
+  // golden_model.init();
+  golden_model.init("fyp18-riscv-emulator/src/Image");
   //golden_model.print_symbols();
   /* golden_model.step();
   golden_model.step(); */
@@ -138,7 +142,7 @@ int main(int argc, char* argv[]) {
       outFile << "keyhit\n";
     }
     
-    if (keys_rx.reader != keys_rx.writer) { keys_rx.reader += golden_model.load_rx_char(keys_rx.char_buffer[keys_rx.reader]); }
+    // if (keys_rx.reader != keys_rx.writer) { keys_rx.reader += golden_model.load_rx_char(keys_rx.char_buffer[keys_rx.reader]); }
 
     #ifdef LOGGING
     /* if (golden_model.get_instruction() == 0x00100073) 
@@ -154,7 +158,8 @@ int main(int argc, char* argv[]) {
     } */
     outFile <<  setfill('0') << setw(16) << dec << bench.tickcount << " ";
     outFile <<  setfill('0') << setw(16) << hex << golden_model.get_pc() << " ";
-    outFile <<  setfill('0') << setw(16) << hex << golden_model.fetch_long(0x804782b8UL+0x00U) << " ";
+    outFile <<  setfill('0') << setw(16) << hex << golden_model.get_instruction() << " ";
+    outFile <<  setfill('0') << setw(16) << hex << golden_model.fetch_long(0x004782b8UL+0x00U) << " ";
     outFile <<  setfill('0') << setw(16) << hex << bench.get_probe() << endl;
     /* switch (golden_model.check_for_mem_access(&mem_address, &data))
     {
@@ -198,7 +203,7 @@ int main(int argc, char* argv[]) {
       //start = high_resolution_clock::now();
       //golden_model.set_mtip();
     }
-    golden_model.set_mtime(duration.count()*10);
+    // golden_model.set_mtime(duration.count()*10);
     //printf("%d\n", timer_interr);
     // Write data to the file
     //printf("Timer might be working");
@@ -212,14 +217,15 @@ int main(int argc, char* argv[]) {
       cout << "time out reached" << endl;
       golden_model.show_state(); break;
     } */
-    if (bench.check_registers(golden_model.gprs)) { 
-      cout << "Register mismatch at register " << dec << bench.check_registers(golden_model.gprs) << endl;
+    if (bench.check_registers(golden_model.reg_file, golden_model.get_mstatus())) { 
+      cout << "Register mismatch at register " << dec << bench.check_registers(golden_model.reg_file, golden_model.get_mstatus());
+      cout << " simulator value: " << setfill('0') << setw(16) << hex << bench.read_register(bench.check_registers(golden_model.reg_file, golden_model.get_mstatus())) << endl;
       golden_model.show_state();
       cout << dec << bench.tickcount << endl;bench.step(); bench.step(); bench.step(); break;
     }
     sim_prev = golden_model.get_pc();
     int x = 1;
-    if (0 && (bench.tickcount > 19816334UL)) {
+    if (0 && (bench.tickcount > 257022660UL)) {
       x = bench.step();
     } else {
       x = bench.step_nodump();
