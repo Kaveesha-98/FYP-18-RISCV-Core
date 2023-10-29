@@ -48,7 +48,8 @@ class simulator {
   public:
 
   uint64_t  prev_pc;
-  unsigned        tickcount;
+  unsigned long        tickcount;
+  unsigned dump_tick;
 
   __uint64_t get_register_value(__uint8_t rd) {
     switch (rd) {
@@ -128,6 +129,7 @@ class simulator {
   ) {
     tb = (new Vsystem);
     tickcount = 0UL;
+    dump_tick = 0UL;
 	
     Verilated::traceEverOn(true);
     tfp = new VerilatedVcdC;
@@ -217,7 +219,7 @@ class simulator {
 
       if (tb ->putChar_valid) { cout << (char)(tb -> putChar_byte) << flush; }
     } */
-    tick(++tickcount, tb, tfp);
+    tick(++dump_tick, tb, tfp);
     #ifndef STEP_TIMEOUT
     while (!(tb -> robOut_commitFired)) {
     #else
@@ -226,8 +228,8 @@ class simulator {
     #ifdef SHOW_TERMINAL
       if (tb ->putChar_valid) { cout << tb -> putChar_byte << flush; }
     #endif
-      tick(++tickcount, tb, tfp);
-    }
+      tick(++dump_tick, tb, tfp);
+          }
     
     #ifdef SHOW_TERMINAL
     if (tb ->putChar_valid) { cout << tb -> putChar_byte << flush; }
@@ -260,7 +262,7 @@ class simulator {
       //if (tb ->putChar_valid) { cout << tb -> putChar_byte << flush; }
     #endif
       tick_nodump(++tickcount, tb, tfp);
-    }
+          }
     
     #ifdef SHOW_TERMINAL
     //if (tb ->putChar_valid) { cout << tb -> putChar_byte << flush; }
@@ -270,7 +272,7 @@ class simulator {
     if (tb -> robOut_commitFired) { return 0; } else { printf("TIMEOUT IN SIMULATOR!!!\n"); return 1; }
   }
 
-  int check_registers(unsigned long *correct) {
+  int check_registers(std::vector<uint64_t> correct, uint64_t mstatus) {
     if ( tb -> registersOut_1 != correct[1] ) { return 1; }
     if ( tb -> registersOut_2 != correct[2] ) { return 2; }
     if ( tb -> registersOut_3 != correct[3] ) { return 3; }
@@ -302,9 +304,117 @@ class simulator {
     if ( tb -> registersOut_29 != correct[29] ) { return 29; }
     if ( tb -> registersOut_30 != correct[30] ) { return 30; }
     if ( tb -> registersOut_31 != correct[31] ) { return 31; }
+    if ( tb -> registersOut_32 != mstatus) { return 32; }
     return 0;
   }
 
   void set_probe(unsigned long address) { tb -> prober_offset = address; }
   unsigned long get_probe() { return tb -> prober_accessLong; }
+
+  __uint64_t read_register(int rs) {
+    switch (rs)
+    {
+    case 0:
+      return 0UL;
+    
+    case 1:
+      return tb -> registersOut_1;
+
+    case 2:
+      return tb -> registersOut_2;
+
+    case 3:
+      return tb -> registersOut_3;
+
+    case 4:
+      return tb -> registersOut_4;
+
+    case 5:
+      return tb -> registersOut_5;
+
+    case 6:
+      return tb -> registersOut_6;
+
+    case 7:
+      return tb -> registersOut_7;
+
+    case 8:
+      return tb -> registersOut_8;
+
+    case 9:
+      return tb -> registersOut_9;
+
+    case 10:
+      return tb -> registersOut_10;
+    
+    case 11:
+      return tb -> registersOut_11;
+
+    case 12:
+      return tb -> registersOut_12;
+
+    case 13:
+      return tb -> registersOut_13;
+
+    case 14:
+      return tb -> registersOut_14;
+
+    case 15:
+      return tb -> registersOut_15;
+
+    case 16:
+      return tb -> registersOut_16;
+
+    case 17:
+      return tb -> registersOut_17;
+
+    case 18:
+      return tb -> registersOut_18;
+
+    case 19:
+      return tb -> registersOut_19;
+    
+    case 20:
+      return tb -> registersOut_20;
+    
+    case 21:
+      return tb -> registersOut_21;
+
+    case 22:
+      return tb -> registersOut_22;
+
+    case 23:
+      return tb -> registersOut_23;
+
+    case 24:
+      return tb -> registersOut_24;
+
+    case 25:
+      return tb -> registersOut_25;
+
+    case 26:
+      return tb -> registersOut_26;
+
+    case 27:
+      return tb -> registersOut_27;
+
+    case 28:
+      return tb -> registersOut_28;
+
+    case 29:
+      return tb -> registersOut_29;
+    
+    case 30:
+      return tb -> registersOut_30;
+    
+    case 31:
+      return tb -> registersOut_31;
+    
+    case 32:
+      return tb -> registersOut_32;
+    
+    default:
+      return 0UL;
+    }
+  }
 };
