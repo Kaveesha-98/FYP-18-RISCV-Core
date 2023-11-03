@@ -236,6 +236,7 @@ class simulator {
     #endif
     // return 1 indicate timeout
     prev_pc = tb -> robOut_pc;
+    if ((tb -> robOut_interrupt) && (tb -> robOut_commitFired)) { return 2; }
     if (tb -> robOut_commitFired) { return 0; } else { printf("TIMEOUT IN SIMULATOR!!!\n"); return 1; }
   }
 
@@ -269,6 +270,7 @@ class simulator {
     #endif
     // return 1 indicate timeout
     prev_pc = tb -> robOut_pc;
+    if ((tb -> robOut_interrupt) && (tb -> robOut_commitFired)) { return 2; }
     if (tb -> robOut_commitFired) { return 0; } else { printf("TIMEOUT IN SIMULATOR!!!\n"); return 1; }
   }
 

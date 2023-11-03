@@ -52,11 +52,18 @@ class uart extends Module {
     when(!readRequestBuffer.len.orR) { readRequestBuffer.valid := false.B }
   }
   val mtime = RegInit(0.U(64.W))
-  mtime := mtime + 1.U
+  val mtimecmp = RegInit(0.U(64.W))
+  val mtimecmplowtemp = Reg(UInt(32.W))
+  val couter_wrap = RegInit(0.U(4.W))
+  couter_wrap := couter_wrap + 1.U
+  mtime := mtime + couter_wrap.andR.asUInt
   val mtimeRead = Reg(UInt(64.W))
   when(client.ARREADY && client.ARVALID) {
     mtimeRead := mtime
   }
+
+  // we don't expect writes larger than 64-bits to uart or clint
+  val writeData = Reg(UInt(64.W))
 
   // client.RDATA := Mux((readRequestBuffer.address&("hff".U)) === ("h2c".U), 8.U, 0.U)
   client.RDATA := 8.U
@@ -99,6 +106,16 @@ class uart extends Module {
     writeRequestBuffer.data.strb := client.WSTRB
   }
 
+  when(writeRequestBuffer.data.valid && !writeRequestBuffer.data.last) { mtimecmplowtemp := writeRequestBuffer.data.data }
+  when(
+    writeRequestBuffer.address.valid && 
+    (writeRequestBuffer.address.offset === "h02004000".U) &&
+    writeRequestBuffer.data.valid &&
+    writeRequestBuffer.data.last
+  ) {
+    mtimecmp := Cat(writeRequestBuffer.data.data, mtimecmplowtemp)
+  }
+
   client.ARREADY := !readRequestBuffer.valid
 
   client.AWREADY := !writeRequestBuffer.address.valid
@@ -107,6 +124,9 @@ class uart extends Module {
   client.BID := writeRequestBuffer.address.id
   client.BRESP := 0.U
   client.BVALID := writeRequestBuffer.address.valid && writeRequestBuffer.data.valid && writeRequestBuffer.data.last
+
+  val MTIP = IO(Output(Bool()))
+  MTIP := (mtime > mtimecmp)
 }
 
 object uart extends App {

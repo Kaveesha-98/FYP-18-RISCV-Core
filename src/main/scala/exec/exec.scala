@@ -240,7 +240,7 @@ class exec extends Module {
     passToMem := !bufferedEntries(0).free && (((bufferedEntries(0).instruction(6, 2) === BitPat("b0?0??")) && (bufferedEntries(0).instruction(6, 2) =/= BitPat("b00011")) ) && updateCurrentEntry) 
   }
   toRob.execptionOccured := robPushBuffer.execptionOccured
-  toRob.mcause := Mux(bufferedEntries(0).instruction === 115.U, 11.U, 3.U)
+  toRob.mcause := Mux(robPushBuffer.instruction(31).asBool, (1.U(64.W) << 63) | 7.U(64.W),Mux(robPushBuffer.instruction === 115.U, 11.U, 3.U))
 }
 
 object exec extends App {

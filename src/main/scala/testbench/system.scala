@@ -46,6 +46,8 @@ class system extends Module {
 
   val sampleOut = IO(Output(cpu.sampleOut.cloneType))
   sampleOut := cpu.sampleOut
+
+  cpu.MTIP := peripheralUart.MTIP
 }
 
 object system extends App {

@@ -735,7 +735,7 @@ class decode extends Module {
   /** -------------------------------------------------------------------------------------------------------------------- */
 
   val mretCall = RegInit(false.B)
-  when(writeBackResult.fired && writeBackResult.execptionOccured && !mretCall && (writeBackResult.mcause === 11.U)) {
+  when(writeBackResult.fired && writeBackResult.execptionOccured && !mretCall && (writeBackResult.mcause =/= 3.U)) {
     exception := true.B
 
     mepc(0) := writeBackResult.mepc
@@ -806,12 +806,16 @@ class decode extends Module {
       when(writeBackResult.fired && (writeBackResult.execptionOccured)) { procCalls := noCall }
     }
   }
+
+  val allowInterrupt = IO(Output(Bool()))
+  allowInterrupt := mstatus(0)(3).asBool && mie(0)(7).asBool && (procCalls === noCall) && (fetchIssueBuffer.instruction(6, 0) =/= "h73".U)
 //  var i = 0;
 //
 //  for(i <- 0 to 31){
 //    regFile(i) := registerFile(i)
 //  }
 //  regFile := registerFile
+
 
 }
 

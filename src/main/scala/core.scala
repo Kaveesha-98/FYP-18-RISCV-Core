@@ -8,6 +8,8 @@ import chisel3.experimental.IO
 import com.sun.org.apache.xpath.internal.operations
 
 class core extends Module {
+  val MTIP = IO(Input(Bool()))
+
   val icache = Module(new pipeline.memAccess.cache.iCache)
 
   val iPort = IO(icache.lowLevelMem.cloneType)
@@ -44,6 +46,10 @@ class core extends Module {
   decode.fromFetch.instruction  := fetch.toDecode.instruction
   fetch.toDecode.expected.valid := decode.fromFetch.expected.valid
   fetch.toDecode.expected.pc    := decode.fromFetch.expected.pc
+  when(MTIP && decode.allowInterrupt && (fetch.toDecode.instruction(6, 0) =/= "b1110011".U) && (fetch.toDecode.instruction(6, 0) =/= "b0001111".U)) {
+    // this is custom instruction to indicate an interrupt
+    decode.fromFetch.instruction := "h80000073".U(64.W)
+  }
 
   // connecting branch results to fetch unit
   Seq(fetch.branchRes.fired, decode.branchRes.fired).foreach(
@@ -248,9 +254,11 @@ class core extends Module {
   val robOut = IO(Output(new Bundle() {
     val commitFired = Bool()
     val pc         = UInt(64.W)
+    val interrupt = Bool()
   }))
   robOut.commitFired := rob.commit.fired
   robOut.pc          := rob.commit.mepc
+  robOut.interrupt   := rob.commit.execptionOccured && rob.commit.mcause(63).asBool
 
   val ziscsrIn = RegInit(false.B)
   when(ziscsrIn) {
@@ -275,3 +283,4 @@ class core extends Module {
 object core extends App {
   emitVerilog(new core)
 }
+
