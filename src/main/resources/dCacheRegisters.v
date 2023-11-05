@@ -28,15 +28,15 @@ module dCacheRegisters #(
   /* assign byte_aligned_data = cache[address[line_width+double_word_offset_width+3-1:double_word_offset_width+3]][address[double_word_offset_width-1 + 3:3]];
   assign tag = tags[address[line_width+double_word_offset_width+3-1:double_word_offset_width+3]];
   assign tag_valid = validBits[address[line_width+double_word_offset_width+3-1:double_word_offset_width+3]]; */
-
+  integer i, j;
   always @(posedge clock) begin
     if (reset) begin
-      for (integer i = 0; i < cache_depth; i++) begin
+      for (i = 0; i < cache_depth; i=i+1) begin
         validBits[i] <= 1'b0;
       end
     end else if (write_in) begin
       // partial writes only occur for blocks already in cache
-      for (integer j = 0; j < block_size; j++) begin
+      for (j = 0; j < block_size; j=j+1) begin
         if (write_mask[j])begin
           cache[write_line_index][j] <= write_block[64*j +: 64];
         end
