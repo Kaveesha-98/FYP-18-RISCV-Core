@@ -132,8 +132,8 @@ int main(int argc, char* argv[]) {
   unsigned long gprs[32];
   bench.set_probe(0x04782b8UL+0x00U);
   bench.step_nodump();
-  unsigned long sim_prev = 0x80000000UL;
-  while (1) {
+  unsigned long sim_prev = 0x80100000UL;
+  while (1 || (bench.tickcount + bench.dump_tick) < 800351768UL) {
     // golden_model.show_state();
     //cin >> x;
     if (kbhit()) {
@@ -234,7 +234,7 @@ int main(int argc, char* argv[]) {
     }
     sim_prev = golden_model.get_pc();
     int x = 1;
-    if (0 && (bench.tickcount > 28026587UL)) {
+    if (0 && (bench.tickcount > 788244445UL)) {
       x = bench.step();
     } else {
       x = bench.step_nodump();
@@ -265,7 +265,7 @@ int main(int argc, char* argv[]) {
       break;
     }
     if (x == 2) { 
-      if (0 && (bench.tickcount > 28026587UL)) {
+      if (0 && (bench.tickcount > 788244445UL)) {
         x = bench.step();
       } else {
         x = bench.step_nodump();
