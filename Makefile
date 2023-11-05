@@ -23,7 +23,7 @@ simulator/src/obj_dir: simulator/src/system.v simulator/src/dCacheRegisters.v si
 	make -f Vsystem.mk; \
 
 targets := $(wildcard src/*.scala)
-simulator/src/system.v: src/main/scala/decode/decode.scala
+simulator/src/system.v: src/main/scala/decode/decode.scala src/main/scala/testbench/uart.scala
 	sbt "runMain system"
 	cp system.v simulator/src/
 	cd simulator/src/; \
