@@ -77,12 +77,46 @@ class uart extends Module {
   client.RRESP := 0.U
   client.RVALID := readRequestBuffer.valid
 
-  val putChar = IO(Output(new Bundle {
+  val putChar = Wire(new Bundle {
     val valid = Bool()
     val byte = UInt(8.W)
-  }))
+  })
   putChar.valid := Seq((writeRequestBuffer.address.offset&("hff".U)) === ("h30".U), writeRequestBuffer.address.valid, writeRequestBuffer.data.valid).reduce(_ && _)
   putChar.byte := writeRequestBuffer.data.data(7, 0)
+
+  val lastUartChars = RegInit(VecInit(Seq.fill(17)(0.U(8.W))))
+  when(putChar.valid) {
+    lastUartChars.zip(putChar.byte +: lastUartChars.dropRight(1))
+    .foreach { case(buffer, next) => { buffer := next } }  
+  }
+
+  val terminalReady = RegInit(false.B)
+  when(!terminalReady) {
+    terminalReady := "buildroot login: ".reverse.toCharArray().toSeq.zip(lastUartChars.toSeq) map { case(char, uchar) => (char.U === uchar)} reduce(_ && _)
+  }
+
+  val hardInput = RegInit(VecInit("root\nls ..".map(c => new Bundle {
+    val valid = Bool()
+    val char = UInt(8.W)
+  } Lit(_.valid -> true.B, _.char -> c.U))))
+
+  when(
+    ((readRequestBuffer.address & "hffff0fff".U) === "he000002c".U) && 
+    readRequestBuffer.valid && terminalReady
+  ) {
+    client.RDATA := (8.U(32.W) | Cat(!(hardInput(0).valid.asUInt),0.U(1.W)))
+  }
+
+  when(
+    ((readRequestBuffer.address & "hffff0fff".U) === "he0000030".U) && 
+    readRequestBuffer.valid && terminalReady
+  ) {
+    client.RDATA := hardInput(0).char
+    when(client.RREADY) {
+      hardInput.dropRight(1).zip(hardInput.drop(1)).foreach { case(curr, next) => curr := next }
+      hardInput.last.valid := false.B
+    }
+  }
 
   when(writeRequestBuffer.address.valid && writeRequestBuffer.data.valid) {
     writeRequestBuffer.data.valid := false.B
