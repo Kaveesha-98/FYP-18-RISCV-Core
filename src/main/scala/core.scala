@@ -7,6 +7,8 @@ import chisel3.experimental.BundleLiterals._
 import chisel3.experimental.IO
 import com.sun.org.apache.xpath.internal.operations
 
+import pipeline.ports._
+
 class core extends Module {
   val MTIP = IO(Input(Bool()))
 
@@ -34,9 +36,12 @@ class core extends Module {
       case _ => outVal := registerFile(i)
     }  }
     
-
+    val mtvecOut = IO(Output(UInt(64.W)))
+    mtvecOut := mtvec(0)
     //val robEmpty = IO(Input(Bool()))
   } )
+
+  val interrProc = RegInit(false.B)
 
   // connecting instruction issue from fetch to decode
   Seq(fetch.toDecode.fired, decode.fromFetch.fired).foreach(
@@ -49,6 +54,17 @@ class core extends Module {
   when(MTIP && decode.allowInterrupt && (fetch.toDecode.instruction(6, 0) =/= "b1110011".U) && (fetch.toDecode.instruction(6, 0) =/= "b0001111".U)) {
     // this is custom instruction to indicate an interrupt
     decode.fromFetch.instruction := "h80000073".U(64.W)
+    interrProc := decode.fromFetch.fired
+  }
+
+  when(interrProc) {
+    fetch.toDecode.expected.valid := true.B
+    fetch.toDecode.expected.pc := decode.mtvecOut
+    Seq(fetch.toDecode.fired, decode.fromFetch.fired).foreach(_ := false.B)
+  }
+
+  when(interrProc) {
+    interrProc := !(decode.writeBackResult.fired && decode.writeBackResult.execptionOccured)
   }
 
   // connecting branch results to fetch unit
@@ -89,25 +105,43 @@ class core extends Module {
 
   decode.writeBackResult.opcode := rob.commit.opcode
 
+  val nonRobForwarding = WireInit(VecInit(Seq.fill(4)(new forwardPort Lit(_.valid -> false.B))))
 
   // opcode is left dangling for the moment
+  val exec = Module(new pipeline.exec.exec {
+    val forward = IO(Output(new forwardPort))
+    forward.valid := !bufferedEntries(0).free && (
+      !bufferedEntries(0).instruction(6).asBool && bufferedEntries(0).instruction(4).asBool && 
+      ((bufferedEntries(0).instruction(5, 2) =/= BitPat("b11?0")) || !bufferedEntries(0).instruction(25).asBool)  
+    )
+    forward.robAddr := bufferedEntries(0).robAddr
+    forward.data := execResult
+  })
+  nonRobForwarding(0) := exec.forward
+  nonRobForwarding(1).valid := exec.toRob.ready
+  nonRobForwarding(1).robAddr := exec.toRob.robAddr
+  nonRobForwarding(1).data := exec.toRob.execResult
 
-  val exec = Module(new pipeline.exec.exec)
-
+  def forwardFromNonRobValid(x: UInt) = {
+    nonRobForwarding.map(i => i.valid && (i.robAddr === x)).reduce(_ || _)
+  }
   // connecting decode to issue instruction (exec & rob)
   Seq(decode.toExec.fired, rob.fromDecode.fired, exec.fromIssue.fired).foreach(
     _ := (
       decode.toExec.ready && rob.fromDecode.ready && exec.fromIssue.ready &&
-      (!decode.toExec.src1.fromRob || rob.fromDecode.fwdrs1.valid) &&
-      (!decode.toExec.src2.fromRob || rob.fromDecode.fwdrs2.valid) &&
-      (!decode.toExec.writeData.fromRob || rob.fromDecode.fwdrs2.valid)
+      (!decode.toExec.src1.fromRob || rob.fromDecode.fwdrs1.valid || forwardFromNonRobValid(decode.toExec.src1.robAddr)) &&
+      (!decode.toExec.src2.fromRob || rob.fromDecode.fwdrs2.valid || forwardFromNonRobValid(decode.toExec.src2.robAddr)) &&
+      (!decode.toExec.writeData.fromRob || rob.fromDecode.fwdrs2.valid || forwardFromNonRobValid(decode.toExec.writeData.robAddr))
     )
   )
+  def forwardToIssue(x: UInt) = {
+    MuxCase(nonRobForwarding.head.data, nonRobForwarding.tail.map(i => (i.valid && (i.robAddr === x)) -> i.data))
+  }
   decode.toExec.robAddr := rob.fromDecode.robAddr
   exec.fromIssue.robAddr := rob.fromDecode.robAddr
-  exec.fromIssue.src1 := Mux(decode.toExec.src1.fromRob, rob.fromDecode.fwdrs1.value, decode.toExec.src1.data)
-  exec.fromIssue.src2 := Mux(decode.toExec.src2.fromRob, rob.fromDecode.fwdrs2.value, decode.toExec.src2.data)
-  exec.fromIssue.writeData := Mux(decode.toExec.writeData.fromRob, rob.fromDecode.fwdrs2.value, decode.toExec.writeData.data)
+  exec.fromIssue.src1 := Mux(decode.toExec.src1.fromRob, Mux(forwardFromNonRobValid(decode.toExec.src1.robAddr), forwardToIssue(decode.toExec.src1.robAddr), rob.fromDecode.fwdrs1.value), decode.toExec.src1.data)
+  exec.fromIssue.src2 := Mux(decode.toExec.src2.fromRob, Mux(forwardFromNonRobValid(decode.toExec.src2.robAddr), forwardToIssue(decode.toExec.src2.robAddr), rob.fromDecode.fwdrs2.value), decode.toExec.src2.data)
+  exec.fromIssue.writeData := Mux(decode.toExec.writeData.fromRob, Mux(forwardFromNonRobValid(decode.toExec.writeData.robAddr), forwardToIssue(decode.toExec.writeData.robAddr), rob.fromDecode.fwdrs2.value), decode.toExec.writeData.data)
   exec.fromIssue.instruction := decode.toExec.instruction
   rob.fromDecode.instOpcode := decode.toExec.instruction(6, 0)
   rob.fromDecode.rd := decode.toExec.instruction(11, 7)
@@ -127,6 +161,21 @@ class core extends Module {
   val memAccess = Module(new pipeline.memAccess.memAccess)
   val peripheral = IO(memAccess.peripherals.cloneType)
   memAccess.peripherals <> peripheral
+  nonRobForwarding(2).valid := memAccess.toRob.ready
+  nonRobForwarding(2).robAddr := memAccess.toRob.robAddr
+  nonRobForwarding(2).data := memAccess.toRob.writeBackData
+
+  nonRobForwarding(3).valid := memAccess.dCache.resp.valid
+  nonRobForwarding(3).robAddr := memAccess.dCache.resp.bits.robAddr
+  nonRobForwarding(3).data := {
+    val rightJustified = memAccess.dCache.resp.bits.byteAlignedData >> Cat(memAccess.dCache.resp.bits.address(2, 0), 0.U(3.W))
+    VecInit.tabulate(4)(i => i match {
+      case 0 => Cat(Fill(56, rightJustified(7) & !memAccess.dCache.resp.bits.funct3(2)), rightJustified(7, 0))
+      case 1 => Cat(Fill(48, rightJustified(15) & !memAccess.dCache.resp.bits.funct3(2)), rightJustified(15, 0))
+      case 2 => Cat(Fill(32, rightJustified(31) & !memAccess.dCache.resp.bits.funct3(2)), rightJustified(31, 0))
+      case _ => memAccess.dCache.resp.bits.byteAlignedData
+    })(memAccess.dCache.resp.bits.funct3(1, 0))
+  }
 
   // connecting mem unit and exec unit
   Seq(exec.toMemory.fired, memAccess.fromPipeline.fired).foreach(

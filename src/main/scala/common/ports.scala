@@ -396,3 +396,9 @@ class DecodeIssuePort extends Bundle {
     val rs2         = UInt(64.W)
     val immediate   = UInt(64.W)
 }
+
+class forwardPort extends Bundle {
+  val valid = Bool()
+  val robAddr = UInt(robAddrWidth.W)
+  val data = UInt(64.W)
+}
