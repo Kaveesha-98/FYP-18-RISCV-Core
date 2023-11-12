@@ -113,6 +113,16 @@ class exec extends Module {
     nextExecutingEntry.writeData    := fromIssue.writeData
     nextExecutingEntry.instruction  := fromIssue.instruction 
   }
+
+  val multiply = Module(new multiplier)
+  val divide = Module(new divider)
+  def isMExtenMul(x: UInt) = (x(6, 2) === BitPat("b011?0")) && x(25).asBool
+  Seq(multiply, divide).foreach(m => {
+    m.inputs.valid := isMExtenMul(bufferedEntries(0).instruction) && m.turnOn(bufferedEntries(0).instruction) && !bufferedEntries(0).free
+    m.inputs.bits.src1 := bufferedEntries(0).src1
+    m.inputs.bits.src2 := bufferedEntries(0).src2
+    m.inputs.bits.mOp := Cat(bufferedEntries(0).instruction(3), bufferedEntries(0).instruction(14, 12))
+  })
   
   /**
     * Processing the currently scheduled entry. To process the entry, the result buffers
@@ -122,7 +132,13 @@ class exec extends Module {
   /* val updateCurrentEntry = (bufferedEntries(0).instruction(6, 2) =/= BitPat("b0?000") && (!robPushBuffer.waiting || toRob.fired)) ||
     (bufferedEntries(0).instruction(6, 2) === BitPat("b0?000") && (!memReqBuffer.waiting || toMemory.fired)) */
   val updateCurrentEntry = (bufferedEntries(0).free ||
-    ((!robPushBuffer.waiting || toRob.fired) && (!passToMem || toMemory.fired)))
+    (
+      (!robPushBuffer.waiting || toRob.fired) && 
+      (!passToMem || toMemory.fired) && 
+      (!isMExtenMul(bufferedEntries(0).instruction) || Seq(multiply, divide).map(_.output.valid).reduce(_ || _))
+    ))
+
+  Seq(multiply, divide).map(_.output.ready).foreach(_ := updateCurrentEntry)
 
   when(updateCurrentEntry) {
     bufferedEntries(0) := nextExecutingEntry
@@ -152,29 +168,17 @@ class exec extends Module {
     val src2 = bufferedEntries(0).src2
     val addSub64 = VecInit(src1 + src2, src1 - src2)
 
-    val result64M = VecInit.tabulate(8)(i => i match {
-        case 0 => (src1.asSInt * src2.asSInt).asUInt // mul
-        case 1 => (src1.asSInt * src2.asSInt)(127, 64).asUInt // mulh
-        case 2 => (Cat(src1(63), src1).asSInt * Cat(0.U(1.W) ,src2).asSInt)(127, 64).asUInt // mulhsu
-        case 3 => (src1 * src2)(127, 64) // mulhu
-        case 4 => Mux(src2 === 0.U, ~(0.U(64.W)), (src1.asSInt / src2.asSInt).asUInt) // div
-        case 5 => Mux(src2 === 0.U, ~(0.U(64.W)), (src1 / src2))// divu
-        case 6 => (src1.asSInt - Mux(src2 === 0.U, (-1).S(64.W), (src1.asSInt / src2.asSInt))*(src2.asSInt) ).asUInt  // rem
-        case 7 => (src1 - Mux(src2 === 0.U, ~(0.U(64.W)), (src1 / src2))*(src2) ) // remu
-      })(instruction(14, 12))
+    val result64M = VecInit.tabulate(2)(i => i match {
+        case 0 => multiply.output.bits
+        case 1 => divide.output.bits
+      })(instruction(14))
 
       val src1W = src1(31,0)
       val src2W = src2(31,0)
-      val result32MW = VecInit.tabulate(8)(i => i match {
-        case 0 => (src1W.asSInt * src2W.asSInt)(31,0).asUInt // mulw
-        case 1 => 0.U // not defined
-        case 2 => 0.U // not defined
-        case 3 => 0.U // not defined
-        case 4 => Mux(src2W === 0.U, ~(0.U(32.W)), (src1W.asSInt / src2W.asSInt).asUInt)(31,0)  // divw
-        case 5 => Mux(src2W === 0.U, ~(0.U(64.W)), (src1W / src2W))(31,0) // divuw
-        case 6 => ((src1W.asSInt - Mux(src2W === 0.U, (-1).S(32.W), (src1W.asSInt / src2W.asSInt))*(src2W.asSInt) ).asUInt)(31,0) // remw
-        case 7 => (src1W - Mux(src2W === 0.U, ~(0.U(32.W)), (src1W / src2W))*(src2W) )(31,0)  // remuw
-      })(instruction(14, 12))
+      val result32MW = VecInit.tabulate(2)(i => i match {
+        case 0 => multiply.output.bits
+        case 1 => divide.output.bits
+      })(instruction(14))
       val result32M = Cat(Fill(32, result32MW(31)), result32MW)
 
     /**

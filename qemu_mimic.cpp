@@ -234,7 +234,7 @@ int main(int argc, char* argv[]) {
     }
     sim_prev = golden_model.get_pc();
     int x = 1;
-    if (0 && (bench.tickcount > 788244445UL)) {
+    if (0 && (bench.tickcount > 1032924UL)) {
       x = bench.step();
     } else {
       x = bench.step_nodump();
@@ -265,7 +265,7 @@ int main(int argc, char* argv[]) {
       break;
     }
     if (x == 2) { 
-      if (0 && (bench.tickcount > 788244445UL)) {
+      if (0 && (bench.tickcount > 1032924UL)) {
         x = bench.step();
       } else {
         x = bench.step_nodump();

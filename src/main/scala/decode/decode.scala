@@ -417,7 +417,7 @@ class decode extends Module {
   val targetReg = RegInit(0.U(dataWidth.W))
 
   when(branch.isBranch && isFetchBranch) {
-    val branchTaken = Seq(
+    /* val branchTaken = Seq(
       decodeIssueBuffer.rs1.data === decodeIssueBuffer.rs2.data,
       decodeIssueBuffer.rs1.data =/= decodeIssueBuffer.rs2.data,
       decodeIssueBuffer.rs1.data.asSInt < decodeIssueBuffer.rs2.data.asSInt,
@@ -427,16 +427,34 @@ class decode extends Module {
       decodeIssueBuffer.rs1.data >= decodeIssueBuffer.rs2.data,
 
     ).zip(Seq(0, 1, 4, 5, 6, 7).map(i => i.U === decodeIssueBuffer.instruction(14, 12))
-    ).map(condAndMatch => condAndMatch._1 && condAndMatch._2).reduce(_ || _)
+    ).map(condAndMatch => condAndMatch._1 && condAndMatch._2).reduce(_ || _) */
+    val branchTaken = (VecInit.tabulate(4)(_ match {
+      case 0 => decodeIssueBuffer.rs1.data =/= decodeIssueBuffer.rs2.data
+      case 2 => decodeIssueBuffer.rs1.data.asSInt >= decodeIssueBuffer.rs2.data.asSInt
+      case 3 => decodeIssueBuffer.rs1.data >= decodeIssueBuffer.rs2.data
+      case _ => false.B
+    })(decodeIssueBuffer.instruction(14, 13)).asUInt) === decodeIssueBuffer.instruction(12)
 
     val branchNextAddress = Mux(branchTaken, decodeIssueBuffer.pc + decodeIssueBuffer.immediate, decodeIssueBuffer.pc + 4.U)
 
-    val target = Seq(
+    /* val target = Seq(
       BitPat("b?????????????????????????1101111") -> (decodeIssueBuffer.pc + decodeIssueBuffer.immediate), /** jal */
       BitPat("b?????????????????????????1100111") -> (decodeIssueBuffer.rs1.data + decodeIssueBuffer.immediate), /** jalr */
       BitPat("b?????????????????????????1100011") -> branchNextAddress, /** branches */
-    ).foldRight(decodeIssueBuffer.pc + 4.U)(getResult)
+    ).foldRight(decodeIssueBuffer.pc + 4.U)(getResult) */
 
+    /* VecInit.tabulate(4)(_ match {
+      case 0 => branchNextAddress
+      case 1 => (decodeIssueBuffer.rs1.data + decodeIssueBuffer.immediate)
+      case _ => (decodeIssueBuffer.pc + decodeIssueBuffer.immediate)
+    })(decodeIssueBuffer.instruction(3, 2)) */
+    val target = Mux(decodeIssueBuffer.instruction(6, 4) === "b110".U, 
+    VecInit.tabulate(4)(_ match {
+      case 0 => branchNextAddress
+      case 1 => (decodeIssueBuffer.rs1.data + decodeIssueBuffer.immediate)
+      case _ => (decodeIssueBuffer.pc + decodeIssueBuffer.immediate)
+    })(decodeIssueBuffer.instruction(3, 2)), decodeIssueBuffer.pc + 4.U
+    )
 
     targetReg := target
 
