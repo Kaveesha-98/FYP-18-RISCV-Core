@@ -122,6 +122,8 @@ class system extends Module {
   sampleOut := cpu.sampleOut
 
   cpu.MTIP := peripheralUart.MTIP
+
+  cpu.PWR_ON := true.B
 }
 
 object system extends App {
