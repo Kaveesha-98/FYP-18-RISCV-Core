@@ -245,12 +245,19 @@ class core extends Module {
 //  regOut := decode.regFile
 
 
+
   val ziscsrIn = RegInit(false.B)
   when(ziscsrIn) {
     Seq(decode.toExec.fired, exec.fromIssue.fired, rob.fromDecode.fired).foreach(_ := false.B)
     ziscsrIn := !(rob.commit.fired && rob.commit.execptionOccured)
   }.otherwise {
     ziscsrIn := decode.toExec.fired && (decode.toExec.instruction(6, 0) === "h73".U)
+  }
+
+  val PWR_ON = IO(Input(Bool()))
+  when(!PWR_ON) {
+    fetch.cache.req.ready := false.B
+    icache.fromFetch.req.valid := false.B
   }
 
 }
