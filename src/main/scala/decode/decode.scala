@@ -511,30 +511,30 @@ class decode extends Module {
 
   val csrReadData = WireDefault(0.U(dataWidth.W))
   switch(immediate) {
-    is("h000".U) { csrReadData := ustatus(0) }
-    is("h005".U) { csrReadData := utvec(0) }
-    is("h041".U) { csrReadData := uepc(0) }
-    is("h042".U) { csrReadData := ucause(0) }
-    is("h106".U) { csrReadData := scounteren(0) }
-    is("h180".U) { csrReadData := satp(0) }
+    // is("h000".U) { csrReadData := ustatus(0) }
+    // is("h005".U) { csrReadData := utvec(0) }
+    // is("h041".U) { csrReadData := uepc(0) }
+    // is("h042".U) { csrReadData := ucause(0) }
+    // is("h106".U) { csrReadData := scounteren(0) }
+    // is("h180".U) { csrReadData := satp(0) }
     is("h300".U) { csrReadData := mstatus(0) }
     is("h301".U) { csrReadData := misa(0) }
-    is("h302".U) { csrReadData := medeleg(0) }
-    is("h303".U) { csrReadData := mideleg(0) }
+    // is("h302".U) { csrReadData := medeleg(0) }
+    // is("h303".U) { csrReadData := mideleg(0) }
     is("h304".U) { csrReadData := mie(0) }
     is("h305".U) { csrReadData := mtvec(0) }
-    is("h306".U) { csrReadData := mcounteren(0) }
+    // is("h306".U) { csrReadData := mcounteren(0) }
     is("h340".U) { csrReadData := mscratch(0) }
     is("h341".U) { csrReadData := mepc(0) }
     is("h342".U) { csrReadData := mcause(0) }
     is("h343".U) { csrReadData := mtval(0) }
     is("h344".U) { csrReadData := mip(0) }
-    is("h3a0".U) { csrReadData := pmpcfg0(0) }
-    is("h3b0".U) { csrReadData := pmpaddr0(0) }
-    is("hf11".U) { csrReadData := mvendorid(0) }
-    is("hf12".U) { csrReadData := marchid(0) }
-    is("hf13".U) { csrReadData := mimpid(0) }
-    is("hf14".U) { csrReadData := mhartid(0) }
+    // is("h3a0".U) { csrReadData := pmpcfg0(0) }
+    // is("h3b0".U) { csrReadData := pmpaddr0(0) }
+    // is("hf11".U) { csrReadData := mvendorid(0) }
+    // is("hf12".U) { csrReadData := marchid(0) }
+    // is("hf13".U) { csrReadData := mimpid(0) }
+    // is("hf14".U) { csrReadData := mhartid(0) }
   }
 
   val csrWriteData = registerFile(rs1Addr)
