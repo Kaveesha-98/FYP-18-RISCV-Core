@@ -123,7 +123,7 @@ class system extends Module {
 
   cpu.MTIP := peripheralUart.MTIP
 
-  cpu.PWR_ON := true.B
+  // cpu.PWR_ON := true.B
 }
 
 object system extends App {

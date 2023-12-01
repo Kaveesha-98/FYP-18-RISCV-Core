@@ -254,11 +254,9 @@ class core extends Module {
     ziscsrIn := decode.toExec.fired && (decode.toExec.instruction(6, 0) === "h73".U)
   }
 
-  val PWR_ON = IO(Input(Bool()))
-  when(!PWR_ON) {
-    fetch.cache.req.ready := false.B
-    icache.fromFetch.req.valid := false.B
-  }
+  val core_sample0, core_sample1 = IO(Output(UInt(1.W)))
+  core_sample0 := decode.fromFetch.expected.valid.asUInt
+  core_sample1 := decode.fromFetch.expected.pc(30)
 
 }
 

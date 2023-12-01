@@ -66,11 +66,13 @@ class uart extends Module {
   val writeData = Reg(UInt(64.W))
 
   // client.RDATA := Mux((readRequestBuffer.address&("hff".U)) === ("h2c".U), 8.U, 0.U)
+  val ps_stat = RegInit(0.U(32.W))
   client.RDATA := 8.U
   switch(readRequestBuffer.address) {
     is("he000002c".U) { client.RDATA := 10.U }
     is("he000102c".U) { client.RDATA := 10.U }
     is("h0200bff8".U) { client.RDATA := Mux(readRequestBuffer.len.orR, mtimeRead(31, 0), mtimeRead(63, 32)) }
+    is("h04000000".U) { client.RDATA := ps_stat }
   }
   client.RID := readRequestBuffer.id
   client.RLAST := !readRequestBuffer.len.orR
@@ -165,4 +167,44 @@ class uart extends Module {
 
 object uart extends App {
   emitVerilog(new uart)
+}
+
+class psClint extends uart {
+  val psMaster = IO(Flipped(new AXI))
+
+  val awFired, wFired, bValid, finished = RegInit(false.B)
+  psMaster.AWREADY := !awFired
+  psMaster.WREADY := !wFired
+  psMaster.BVALID := awFired && wFired
+
+  when(psMaster.AWVALID && psMaster.AWREADY) { awFired := true.B }
+  when(psMaster.WVALID && psMaster.WREADY) { wFired := true.B }
+  when(psMaster.BVALID && psMaster.BREADY) { finished := true.B }
+
+  when(finished) {
+    psMaster.AWREADY := false.B
+    psMaster.WREADY := false.B
+    psMaster.BVALID := false.B
+  }
+  val bid = Reg(psMaster.AWID.cloneType)
+  when(psMaster.AWREADY && psMaster.AWVALID) { bid := psMaster.AWID }
+  psMaster.BID := bid
+  psMaster.BRESP := 0.U
+
+  psMaster.ARREADY := false.B
+
+  psMaster.RVALID := false.B
+  psMaster.RDATA := 0.U
+  psMaster.RID := 0.U
+  psMaster.RLAST := false.B
+  psMaster.RRESP := 0.U
+  when(psMaster.WREADY && psMaster.WVALID) { ps_stat := psMaster.WDATA }
+
+  val STANDBY, RUNNING = IO(Output(Bool()))
+  STANDBY := !ps_stat.orR
+  RUNNING := ps_stat.orR
+}
+
+object psClint extends App {
+  emitVerilog(new psClint)
 }
