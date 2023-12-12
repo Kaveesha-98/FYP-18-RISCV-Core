@@ -15,6 +15,7 @@ obj_dir/
 cpu-test/cpuTestbench
 !cpu-test/cpuTestbench.v
 !src/main/resources/*v
+!src/main/resources/zynq/*v
 *.f
 verilator-tests/dCache/dCache
 verilator-tests/testbench/testbench
