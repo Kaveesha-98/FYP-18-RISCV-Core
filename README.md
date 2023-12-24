@@ -9,3 +9,7 @@ Running simulation (without a emulator to verify correct operation)
 ```
 make runSim
 ```
+Running simulation (with a emulator to verify correct operation)
+```
+make runLockStep 
+```
