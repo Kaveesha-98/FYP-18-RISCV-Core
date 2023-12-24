@@ -23,12 +23,38 @@ simulator/src/obj_dir: simulator/src/system.v simulator/src/dCacheRegisters.v si
 	make -f Vsystem.mk; \
 
 targets := $(wildcard src/*.scala)
-simulator/src/system.v: src/main/scala/decode/decode.scala src/main/scala/testbench/uart.scala
+sim:
+	# Change instructionBase in configuration file
+	mv src/main/scala/common/configuration.scala configuration.txt
+	sed 's/instructionBase/instructionBase = 0x0000000010000000L\/\//' configuration.txt > src/main/scala/common/configuration.scala
 	sbt "runMain system"
+	# Restoring the original configuration
+	mv configuration.txt src/main/scala/common/configuration.scala
 	cp system.v simulator/src/
 	cd simulator/src/; \
 	cp ../../dCacheRegisters.v .; \
 	cp ../../iCacheRegisters.v .; \
+	echo '/* verilator lint_off UNUSED */' | cat - system.v > temp && mv temp system.v; \
+	echo '/* verilator lint_off DECLFILENAME */' | cat - system.v > temp && mv temp system.v; \
+	echo '/* verilator lint_off UNUSED */' | cat - dCacheRegisters.v > temp && mv temp dCacheRegisters.v; \
+	echo '/* verilator lint_off DECLFILENAME */' | cat - dCacheRegisters.v > temp && mv temp dCacheRegisters.v; \
+	echo '/* verilator lint_off VARHIDDEN */' | cat - dCacheRegisters.v > temp && mv temp dCacheRegisters.v; \
+	echo '/* verilator lint_off UNUSED */' | cat - iCacheRegisters.v > temp && mv temp iCacheRegisters.v; \
+	echo '/* verilator lint_off DECLFILENAME */' | cat - iCacheRegisters.v > temp && mv temp iCacheRegisters.v; \
+	echo '/* verilator lint_off VARHIDDEN */' | cat - iCacheRegisters.v > temp && mv temp iCacheRegisters.v; \
+	echo '/* verilator lint_off VARHIDDEN */' | cat - system.v > temp && mv temp system.v; \
+	echo '/* verilator lint_off WIDTH */' | cat - system.v > temp && mv temp system.v; \
+	verilator -Wall --trace -cc system.v; \
+	cd obj_dir/; \
+	make -f Vsystem.mk; \
+
+simulator/src/bench.out: simulator/src/obj_dir simulator/src/simulator.h simulator/src/bench.cpp
+	cd simulator/src; \
+	g++ -O3 -I /usr/share/verilator/include -I obj_dir /usr/share/verilator/include/verilated.cpp /usr/share/verilator/include/verilated_vcd_c.cpp bench.cpp obj_dir/Vsystem__ALL.a -o bench.out
+
+runSim: simulator/src/bench.out
+	cd simulator/src/; \
+	./bench.out
 
 bintoh :
 	echo "#include <stdio.h>" > bintoh.c
