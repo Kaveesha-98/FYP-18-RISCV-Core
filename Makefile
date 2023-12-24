@@ -65,3 +65,15 @@ prog.h : Image1 bintoh
 	./bintoh program < $< > $@
 	# WARNING: sixtyfourmb.dtb MUST hvave at least 16 bytes of buffer room AND be 16-byte aligned.
 	#  dtc -I dts -O dtb -o sixtyfourmb.dtb sixtyfourmb.dts -S 1536
+
+make zynq:
+	# Change instructionBase in configuration file
+	mv src/main/scala/common/configuration.scala configuration.txt
+	sed 's/instructionBase/instructionBase = 0x0000000040000000L\/\//' configuration.txt > src/main/scala/common/configuration.scala
+	sbt "runMain core"
+	# Restoring the original configuration
+	mv configuration.txt src/main/scala/common/configuration.scala
+	# Contains the program that is run until the PS sets up RAM
+	sbt "runMain bootROM"
+	# Contains the clint, and the register to signal to the core that the image is loaded to RAM
+	sbt "runMain testbench.psClint"
