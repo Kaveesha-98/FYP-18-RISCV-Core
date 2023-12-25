@@ -100,3 +100,30 @@ make runLockStep
         RSTB Pin: Not selected
   ```
 5. Create new block diagram
+6. Create Zynq-PS IP
+  ```
+  UART1: Enabled
+  M AXI GP0 interface: Enabled to signal boot program when the RAM is ready
+  S AXI GP0 interface: Enabled to allow uart access from RISCV core
+  S AXI HP0 interface: Enabled to allow RAM access from RISCV core
+  FCLK_CLK0: 55 MHz
+  ```
+7. Import ```core.v``` and ```psClint.v``` to block diagram (Note: Both the reset signals are active high)
+8. ```Address Editor``` should show the following
+  ```
+  Zynq-PS
+    M AXI GP0:
+      0x4000_0000 - 0x7FFF_FFFF: psMaster port of psClint
+  core.v
+    iPort:
+      0x0000_0000 - 0x3FFF_FFFF: S_AXI_HP0 port of Zynq-PS
+      0x4000_0000 - 0x7FFF_FFFF: req port of bootROM
+    dPort:
+      0x0000_0000 - 0x3FFF_FFFF: S_AXI_HP0 port of Zynq-PS
+      0x4000_0000 - 0x7FFF_FFFF: req port of bootROM
+    peripheral:
+      0x0000_0000 - 0x0FFF_FFFF: client port of psClint
+      0xE000_0000 - 0xEO3F_FFFF: S_AXI_GP0 port of Zynq-PS
+  ```
+9. Connect MTIP of ```core.v``` and ```psClint.v```
+10. Build bitstream, export hardware and open new Vitis project
