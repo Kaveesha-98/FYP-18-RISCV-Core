@@ -78,3 +78,4 @@ make zynq:
 	# Contains the clint, and the register to signal to the core that the image is loaded to RAM
 	sbt "runMain testbench.psClint"
 	cp src/main/resources/zynq/vivado.tcl .
+	make prog.h

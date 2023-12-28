@@ -40,4 +40,6 @@ verilator-tests/linuxboot/.fuse_hidden0000782a000000b2
 *.out
 *.log
 vivado*
-!*vivado.tcl
+vitis*
+bintoh*
+prog.h
