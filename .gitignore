@@ -15,6 +15,7 @@ obj_dir/
 cpu-test/cpuTestbench
 !cpu-test/cpuTestbench.v
 !src/main/resources/*v
+!src/main/resources/zynq/*v
 *.f
 verilator-tests/dCache/dCache
 verilator-tests/testbench/testbench
@@ -38,3 +39,7 @@ verilator-tests/linuxboot/.fuse_hidden000076fb00000066
 verilator-tests/linuxboot/.fuse_hidden0000782a000000b2
 *.out
 *.log
+vivado*
+vitis*
+bintoh*
+prog.h

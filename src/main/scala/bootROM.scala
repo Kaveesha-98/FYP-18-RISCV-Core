@@ -20,7 +20,7 @@ class bootROM extends Module {
     bytesArray
   }
 
-  val ROM = VecInit(readBinaryFile("ps_boot.bin").toSeq.map(_&0x00ff).map(_.U(8.W)))
+  val ROM = VecInit(readBinaryFile("src/main/resources/bootrom/ps_boot.bin").toSeq.map(_&0x00ff).map(_.U(8.W)))
 
   val readRequestBuffer = RegInit(new Bundle {
     val valid = Bool()
