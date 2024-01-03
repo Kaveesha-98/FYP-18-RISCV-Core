@@ -1,3 +1,6 @@
 [submodule "fyp18-riscv-emulator"]
 	path = fyp18-riscv-emulator
 	url = https://github.com/Kaveesha-98/fyp18-riscv-emulator.git
+[submodule "simulator"]
+	path = simulator
+	url = https://github.com/Kaveesha-98/simulator.git
