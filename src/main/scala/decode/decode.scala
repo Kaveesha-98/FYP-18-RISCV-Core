@@ -350,10 +350,12 @@ class decode extends Module {
   /** FSM for ready valid interface of fetch buffer */
   /** -------------------------------------------------------------------------------------------------------------------*/
   switch(stateRegFetchBuf) {
+    // -> Empty state - No valid entry in FetchIssueBuffer
     is(emptyState) {
-      validOutFetchBuf := false.B
-      readyOutFetchBuf := true.B
+      validOutFetchBuf := false.B // -> No valid entry in FetchIssueBuffer
+      readyOutFetchBuf := true.B // -> Since FetchIssueBuffer is empty we can accept a new one
       when(fromFetch.fired && fromFetch.pc === fromFetch.expected.pc) {
+        // -> Accepting a new instruction from fetch
         stateRegFetchBuf := fullState
       }
     }
@@ -367,11 +369,15 @@ class decode extends Module {
         } otherwise {
           validOutFetchBuf := !csrDone
           when(readyOutDecodeBuf) {
+            // -> sedning entry to decodeIssueBuffer
+            // -> Not system stuff
             readyOutFetchBuf := true.B
             when(!fromFetch.fired || fromFetch.pc =/= fromFetch.expected.pc) {
+              // -> No new empty from Fetch
               stateRegFetchBuf := emptyState
             }
           } otherwise {
+            // -> .Stall in issuing instruction in decodeIssueBuf
             readyOutFetchBuf := false.B
           }
         }
