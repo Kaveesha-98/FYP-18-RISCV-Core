@@ -163,13 +163,16 @@ class branchResToFetch extends composableInterface {
   */  
 class pullCommitFrmRob extends composableInterface {
   val robAddr       = Input(UInt(robAddrWidth.W))
-  val rdAddr        = Input(UInt(5.W))
-  val opcode = Input(UInt(7.W))
+  // val rdAddr        = Input(UInt(5.W))
+  val inst = Input(UInt(32.W))
   val writeBackData = Input(UInt(64.W)) // mtval when exceptionOccured
   //Additional wires when exception handling is added
   val execptionOccured  = Input(Bool())
   val mcause            = Input(UInt(64.W))
   val mepc              = Input(UInt(64.W))
+  // Adding two more ports for floating point extenstion 
+  val fFlags            = Input(UInt(5.W))
+  // val fReg              = Input(Bool())
 } 
 
 /**
@@ -180,13 +183,16 @@ class pullCommitFrmRob extends composableInterface {
   */
 class commitInstruction extends composableInterface {
   val robAddr       = Output(UInt(robAddrWidth.W))
-  val rdAddr        = Output(UInt(5.W))
-  val opcode = Output(UInt(7.W))
+  // val rdAddr        = Output(UInt(5.W))
+  val inst = Output(UInt(32.W))
   val writeBackData = Output(UInt(64.W)) // mtval when exceptionOccured
   // Additional wires when exception handling is added
   val execptionOccured  = Output(Bool())
   val mcause            = Output(UInt(64.W))
   val mepc              = Output(UInt(64.W))
+  // Adding two more ports for floating point extenstion 
+  val eflags            = Output(UInt(5.W))
+  // val fwrite            = Output(Bool())
 } 
 /*******************************************************************/
 
@@ -228,7 +234,7 @@ class pushInsToPipeline extends composableInterface {
   * rob interface
   */
 class robAllocate extends composableInterface {
-  val instOpcode = Input(UInt(7.W))
+  val inst = Input(UInt(32.W))
   val robAddr = Output(UInt(robAddrWidth.W))
   val rd = Input(UInt(5.W))
   val fwdrs1 = new Bundle {
@@ -280,6 +286,7 @@ class pushToMemory extends composableInterface {
   val memAddress  = Output(UInt(64.W))
   val writeData   = Output(UInt(64.W)) // right justified as in rs2
   val instruction = Output(UInt(32.W))
+  // val fwrite      = Output(Bool())
 }
 
 /**
@@ -319,8 +326,9 @@ class pushExecResultToRob extends composableInterface {
   val execptionOccured  = Output(Bool())
   val mcause            = Output(UInt(64.W))
   //val mepc              = Output(UInt(64.W))
+  val eflags = Output(UInt(5.W))
+  // val fwrite = Output(Bool())
 }
-
 /**
   * Rule - push_exec_results_to_rob
   *
@@ -332,6 +340,8 @@ class pullExecResultToRob extends composableInterface {
   // Additional wires when exception handling is added
   val execeptionOccured  = Input(Bool())
   val mcause            = Input(UInt(64.W))
+  val eflags = Input(UInt(5.W))
+  // val fwrite = Input(Bool())
 }
 /*******************************************************************/
 
@@ -365,6 +375,7 @@ class pushMemResultToRob extends composableInterface {
 class pullMemResultToRob extends composableInterface {
   val robAddr     = Input(UInt(robAddrWidth.W))
   val writeBackData  = Input(UInt(64.W))
+  // val fwrite      = Input(Bool())
 }
 /*******************************************************************/
 
