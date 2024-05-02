@@ -75,7 +75,7 @@ class exec extends Module {
     _.execptionOccured -> false.B
   ))
   val passToMem = RegInit(false.B)
-  toRob.ready := robPushBuffer.waiting && (robPushBuffer.instruction(6, 2) =/= "b00000".U && robPushBuffer.instruction(6, 2) =/= "b01011".U)
+  toRob.ready := robPushBuffer.waiting && (robPushBuffer.instruction(6, 2) =/= "b0000?".U && robPushBuffer.instruction(6, 2) =/= "b01011".U)
   toRob.robAddr := robPushBuffer.robAddr
   toRob.execResult := robPushBuffer.execResult
   toRob.eflags := robPushBuffer.eflags
@@ -85,7 +85,8 @@ class exec extends Module {
   toMemory.robAddr      := robPushBuffer.robAddr
   toMemory.memAddress   := robPushBuffer.execResult
   toMemory.writeData    := robPushBuffer.writeData
-  toMemory.instruction  := robPushBuffer.instruction 
+  //below line of code is edited for change flw,fsw to lw,sw
+  toMemory.instruction := Mux(robPushBuffer.instruction(6,2) === BitPat("b0?001"), Cat(robPushBuffer.instruction(31,3),0.U(1.W),robPushBuffer.instruction(1,0)), robPushBuffer.instruction)
   // toMemory.fwrite := robPushBuffer.fwrite
   //! Debug signals
   val insState = WireInit(0.U(3.W))
@@ -259,10 +260,10 @@ class exec extends Module {
 
   when(robPushBuffer.waiting) {
     // condition to deassert waiting(if true it has keep on waiting)
-    robPushBuffer.waiting := (!toRob.fired || (!bufferedEntries(0).free && (bufferedEntries(0).instruction(6, 2) =/= BitPat("b00000") && bufferedEntries(0).instruction(6, 2) =/= BitPat("b01011")) && (!passToMem || toMemory.fired)))// && (bufferedEntries(0).instruction(6, 2) =/= BitPat("b00011"))
+    robPushBuffer.waiting := (!toRob.fired || (!bufferedEntries(0).free && (bufferedEntries(0).instruction(6, 2) =/= BitPat("b0000?") && bufferedEntries(0).instruction(6, 2) =/= BitPat("b01011")) && (!passToMem || toMemory.fired)))// && (bufferedEntries(0).instruction(6, 2) =/= BitPat("b00011"))
   }.otherwise {
     // asserting waiting
-    robPushBuffer.waiting := !bufferedEntries(0).free && ((bufferedEntries(0).instruction(6, 2) =/= BitPat("b00000") && bufferedEntries(0).instruction(6, 2) =/= BitPat("b01011")) && updateCurrentEntry)// && (bufferedEntries(0).instruction(6, 2) =/= BitPat("b00011"))
+    robPushBuffer.waiting := !bufferedEntries(0).free && ((bufferedEntries(0).instruction(6, 2) =/= BitPat("b0000?") && bufferedEntries(0).instruction(6, 2) =/= BitPat("b01011")) && updateCurrentEntry)// && (bufferedEntries(0).instruction(6, 2) =/= BitPat("b00011"))
   }
 
   when(passToMem) {
