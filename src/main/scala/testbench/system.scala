@@ -8,6 +8,7 @@ import pipeline.configuration.coreConfiguration._
 import pipeline.memAccess.AXI
 import _root_.testbench.mainMemory
 import _root_.testbench.uart
+import chisel3.util.experimental.decode.decoder
 
 class system extends Module {
   
@@ -15,8 +16,7 @@ class system extends Module {
   val cpu = Module(new core {
     val registersOut = IO(Output(decode.registersOut.cloneType))
     registersOut := decode.registersOut
-
-
+    
     // Debug Signals
 
     val branchOut = IO(Output(new Bundle() {
@@ -87,9 +87,13 @@ class system extends Module {
     val sampleOut = IO(Output(decode.csrWriteOut.cloneType))
     sampleOut := decode.csrWriteOut
   })
+  
+  val insState = IO(Output(UInt(3.W)))
 
   val memory = Module(new mainMemory)
 
+  insState := cpu.insState 
+   
   cpu.iPort <> memory.clients(0)
   cpu.dPort <> memory.clients(1)
 

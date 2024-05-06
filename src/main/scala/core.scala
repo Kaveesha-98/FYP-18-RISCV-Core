@@ -16,6 +16,8 @@ class core extends Module {
 
   val iPort = IO(icache.lowLevelMem.cloneType)
 
+  val insState = IO(Output(UInt(3.W)))
+
   icache.lowLevelMem <> iPort
 
   val fetch = Module(new fetch(2))
@@ -105,7 +107,7 @@ class core extends Module {
 
   decode.writeBackResult.inst := rob.commit.inst
   decode.writeBackResult.fFlags := rob.commit.eflags
-  // decode.writeBackResult.opcode := rob.commit.opcode
+  insState := decode.insState
 
   val nonRobForwarding = WireInit(VecInit(Seq.fill(4)(new forwardPort Lit(_.valid -> false.B))))
 

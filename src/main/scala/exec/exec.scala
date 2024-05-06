@@ -246,7 +246,7 @@ class exec extends Module {
   
 
   val memAddress = bufferedEntries(0).src1 + bufferedEntries(0).src2
-    val funct5List = List("b10000".U,"b10001".U,"b10010".U,"b10011".U,"b10100".U) //F-OP and 3 operand
+  val funct5List = List("b10000".U,"b10001".U,"b10010".U,"b10011".U,"b10100".U) //F-OP and 3 operand
                                                                                         
   val fpuOp = funct5List.map(funct5List => bufferedEntries(0).instruction(6,2) === funct5List).reduce(_ || _)
 
