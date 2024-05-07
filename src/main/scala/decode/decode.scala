@@ -149,6 +149,9 @@ class decode extends Module {
   val isfmsub  = RegInit(false.B)
   val isfnmadd = RegInit(false.B)
   val isfnmsub = RegInit(false.B)
+  val rs3_rs3  = RegInit(0.U(5.W))     //To store the rs3 address of the 3 operand instruction
+  val rs3_rd   = RegInit(0.U(5.W))     //To store the rd  address of the 3 operand instruction
+  val rs3_rm   = RegInit(0.U(3.W))     //To store the rm  address of the 3 operand instruction
   //? Debug signals
   pcMatches := fromFetch.expected.pc === fromFetch.pc
   insState := 0.U
@@ -191,6 +194,10 @@ class decode extends Module {
         }.otherwise{
           fetchIssueBuffer.instruction := Cat("b00010".U,fromFetch.instruction(26,0))
         }
+
+        rs3_rs3  := fromFetch.instruction(31,27)
+        rs3_rd := fromFetch.instruction(11,7)
+        rs3_rm  := fromFetch.instruction(14,12)
       
     } .elsewhen((funct5MatchFound &&  fromFetch.instruction(6,0) === fcomp.U)) {   
       rs3ins := false.B        
@@ -230,33 +237,25 @@ class decode extends Module {
     // //FNMADD  f(rd) = -f(rd) - f(rs3)                                                                       
     // when(isfnmsub){fetchIssueBuffer.instruction := Cat("b0000000".U,fromFetch.instruction(31,27),fromFetch.instruction(11,7)
     //                                                                 ,fromFetch.instruction(14,7),fcomp.U)}
-    when(fromFetch.instruction(14,12) === "b111".U){ //rm = DYN
+    when (rs3_rm === "b111".U){ //rm = DYN
       // fetchIssueBuffer.instruction := Cat(fromFetch.instruction(31,15),fcsr(0)(7,5),fromFetch.instruction(11,0))
-      when(isfmadd) {fetchIssueBuffer.instruction := Cat("b0000000".U,fromFetch.instruction(31,27),fromFetch.instruction(11,7),
-                                                                    fcsr(0)(7,5),fromFetch.instruction(11,7),fcomp.U)}
+      when(isfmadd) {fetchIssueBuffer.instruction := Cat("b0000000".U, rs3_rs3, rs3_rd, fcsr(0)(7,5), rs3_rd, fcomp.U)}
       //FSUB  f(rd) = f(rd) - f(rs3)
-      when(isfmsub) {fetchIssueBuffer.instruction := Cat("b0000100".U,fromFetch.instruction(31,27),fromFetch.instruction(11,7),
-                                                                      fcsr(0)(7,5),fromFetch.instruction(11,7),fcomp.U)}
+      when(isfmsub) {fetchIssueBuffer.instruction := Cat("b0000100".U, rs3_rs3, rs3_rd, fcsr(0)(7,5), rs3_rd, fcomp.U)}
       //FSUB, f(rd) = f(rs3) - f(rd)
-      when(isfnmadd){fetchIssueBuffer.instruction := Cat("b0000100".U,fromFetch.instruction(31,27),fromFetch.instruction(11,7),
-                                                                      fcsr(0)(7,5),fromFetch.instruction(11,7),fcomp.U)}
+      when(isfnmadd){fetchIssueBuffer.instruction := Cat("b0000100".U, rs3_rs3, rs3_rd, fcsr(0)(7,5), rs3_rd, fcomp.U)}
       //FNMADD  f(rd) = -f(rd) - f(rs3)                                                                       
-      when(isfnmsub){fetchIssueBuffer.instruction := Cat("b0000000".U,fromFetch.instruction(31,27),fromFetch.instruction(11,7),
-                                                                      fcsr(0)(7,5),fromFetch.instruction(11,7),fcomp.U)}
+      when(isfnmsub){fetchIssueBuffer.instruction := Cat("b0000000".U, rs3_rs3, rs3_rd, fcsr(0)(7,5), rs3_rd, fcomp.U)}
     
     
     } .otherwise{
-      when(isfmadd) {fetchIssueBuffer.instruction := Cat("b0000000".U,fromFetch.instruction(31,27),fromFetch.instruction(11,7)
-                                                                    ,fromFetch.instruction(14,7),fcomp.U)}
+      when(isfmadd) {fetchIssueBuffer.instruction := Cat("b0000000".U, rs3_rs3, rs3_rd, rs3_rm, rs3_rd, fcomp.U)}
       //FSUB  f(rd) = f(rd) - f(rs3)
-      when(isfmsub) {fetchIssueBuffer.instruction := Cat("b0000100".U,fromFetch.instruction(31,27),fromFetch.instruction(11,7)
-                                                                      ,fromFetch.instruction(14,7),fcomp.U)}
+      when(isfmsub) {fetchIssueBuffer.instruction := Cat("b0000100".U, rs3_rs3, rs3_rd, rs3_rm, rs3_rd, fcomp.U)}
       //FSUB, f(rd) = f(rs3) - f(rd)
-      when(isfnmadd){fetchIssueBuffer.instruction := Cat("b0000100".U,fromFetch.instruction(31,27),fromFetch.instruction(11,7),
-                                                                      fromFetch.instruction(14,7),fcomp.U)}
+      when(isfnmadd){fetchIssueBuffer.instruction := Cat("b0000100".U, rs3_rs3, rs3_rd, rs3_rm, rs3_rd, fcomp.U)}
       //FNMADD  f(rd) = -f(rd) - f(rs3)                                                                       
-      when(isfnmsub){fetchIssueBuffer.instruction := Cat("b0000000".U,fromFetch.instruction(31,27),fromFetch.instruction(11,7)
-                                                                      ,fromFetch.instruction(14,7),fcomp.U)}
+      when(isfnmsub){fetchIssueBuffer.instruction := Cat("b0000000".U, rs3_rs3, rs3_rd, rs3_rm, rs3_rd, fcomp.U)}
     } 
 
     rs3ins := false.B
