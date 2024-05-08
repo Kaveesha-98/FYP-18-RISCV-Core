@@ -351,7 +351,7 @@ class fpu(expWidth: Int, sigWidth: Int) extends Module {
 		io.result := Cat(0.U(32.W),result_divsqrt)
 		io.ef     := ef_divsqrt
 	}.elsewhen(io.inst(31,27)===BitPat("b00100")){
-		io.result := Cat(0.U(32.W),result_signinj)
+		io.result := Cat(Fill(32, result_signinj(31)),result_signinj)
 		io.ef     := 0.U(5.W)
 	}.elsewhen(io.inst(31,27)===BitPat("b00101")){
 		io.result := Cat(0.U(32.W),result_minmax)

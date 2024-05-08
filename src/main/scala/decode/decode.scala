@@ -166,14 +166,12 @@ class decode extends Module {
   /** Storing instruction and pc in the fetch buffer */
   when( (fromFetch.fired && readyOutFetchBuf && (fromFetch.expected.pc === fromFetch.pc))) {       /** Data from the fetch unit is valid and fetch buffer is ready and the expected PC is matching */
     fetchIssueBuffer.pc          := fromFetch.pc
-    // insState := 1.U
     // Adding the instruction modifier here.
     // For 3 operand instructions
     when(fromFetch.instruction(6,0) === fmadd.U || fromFetch.instruction(6,0) === fmsub.U || fromFetch.instruction(6,0) === fnmadd.U || fromFetch.instruction(6,0) === fnmsub.U){
       rs3ins := true.B
       //Rearranging the instruction to form two 2 operand instructions
       //Need a state transition
-      // insState := 2.U
         when(fromFetch.instruction(6,0) === fmadd.U) { isfmadd := true.B}
           .otherwise{isfmadd := false.B}
         when(fromFetch.instruction(6,0) === fmsub.U) { isfmsub := true.B}
@@ -201,7 +199,6 @@ class decode extends Module {
       
     } .elsewhen((funct5MatchFound &&  fromFetch.instruction(6,0) === fcomp.U)) {   
       rs3ins := false.B        
-      // insState := 4.U   
       //For computational (2 operand) and CVT 
       when(fromFetch.instruction(14,12) === "b111".U || fromFetch.instruction(14,12) === "b101".U || fromFetch.instruction(14,12) === "b110".U){ //rm = DYN || rm = for future use
         //Setting the illegal case to first rounding option
@@ -217,14 +214,12 @@ class decode extends Module {
       }
     }.otherwise {
       rs3ins := false.B    
-      // insState := 5.U
       fetchIssueBuffer.instruction := fromFetch.instruction
     }
   }
   //* For 3 operand instructions
   when(rs3ins){
-    //For the 2nd set of instructions
-    // insState := 3.U
+    //For the 2nd set of instruction
     //FADD  f(rd) = f(rd) + f(rs3)
     // when(isfmadd) {fetchIssueBuffer.instruction := Cat("b0000000".U,fromFetch.instruction(31,27),fromFetch.instruction(11,7)
     //                                                                 ,fromFetch.instruction(14,7),fcomp.U)}
@@ -433,31 +428,26 @@ class decode extends Module {
   //Both fload, fstore read form integer file
   //First to work with Freg reads
   
-  when(getInsType(opcode) === ftype.U && !( ((isFMVxw) || isFCVT))) { 
-    // insState := 1.U       
+  when(getInsType(opcode) === ftype.U && !( ((isFMVxw) || isFCVT))) {
     rs1.data         := registerFileF(rs1Addr)
     rs1.robAddr      := robFileF(rs1Addr)
     when(stateRegDecodeBuf === fullState) { 
-      // insState := 2.U
       //* Checking with the next instruction                                                                  /** Check dependencies in adjacent instrucitons */
       valid.rs1Data    := (rs1Addr =/= decodeIssueBuffer.instruction(11,7) && (validBitF(rs1Addr).asBool || (writeBackResult.fired === 1.U && !validBitF(writeBackResult.inst(11,7)).asBool && (writeBackResult.inst(11,7) === rs1Addr)  && (fReg) && (robFileF(writeBackResult.inst(11,7)) === writeBackResult.robAddr) && writeBackResult.inst(6,0) =/= fstore.U )))
       valid.rs1RobAddr := (rs1Addr =/= decodeIssueBuffer.instruction(11,7) && ((~validBitF(rs1Addr)).asBool && !(writeBackResult.fired === 1.U && !validBitF(writeBackResult.inst(11,7)).asBool && (writeBackResult.inst(11,7) === rs1Addr) && (fReg) && (robFileF(writeBackResult.inst(11,7)) === writeBackResult.robAddr) && writeBackResult.inst(6,0) =/= fstore.U )))
       
       //Added Freg check for good measure
     }.elsewhen(writeBackResult.fired === 1.U && !validBitF(writeBackResult.inst(11,7)).asBool && (writeBackResult.inst(11,7) === rs1Addr)&& (fReg) && (robFileF(writeBackResult.inst(11,7)) === writeBackResult.robAddr) && writeBackResult.inst(6,0) =/= fstore.U ){
-      // insState := 3.U
       //*Here if the data is present in writeback take it directly and next instruction is not available yet
       rs1.data          := writeBackResult.writeBackData
       valid.rs1Data     := true.B
       valid.rs1RobAddr  := false.B
       //Added Freg check for good measure
     }.otherwise {
-      // insState := 4.U
       valid.rs1Data    := validBitF(rs1Addr).asBool
       valid.rs1RobAddr := (~validBitF(rs1Addr)).asBool
     }
     when(writeBackResult.fired === 1.U && !validBitF(writeBackResult.inst(11,7)).asBool && (writeBackResult.inst(11,7) === rs1Addr) && (fReg) && (robFileF(writeBackResult.inst(11,7)) === writeBackResult.robAddr)&& writeBackResult.inst(6,0) =/= fstore.U ){
-      // insState := 5.U
       rs1.data         := writeBackResult.writeBackData
     }
   } 
@@ -465,28 +455,23 @@ class decode extends Module {
   //   //For MV.X , CVT._.W or CVT._.L, fload and fstore
   //   //fload condition now works with load
   //   rs1.data         := registerFile(rs1Addr)
-  //   rs1.robAddr      := robFile(rs1Addr)
-  //   insState := 1.U
-  //   when(stateRegDecodeBuf === fullState) { 
-  //     insState := 2.U
+  //   rs1.robAddr      := robFile(rs1Add
+  //   when(stateRegDecodeBuf === fullState) 
   //     /** Check dependencies in adjacent instrucitons */
   //     valid.rs1Data    := rs1Addr =/= decodeIssueBuffer.instruction(11,7) && (validBit(rs1Addr).asBool || (writeBackResult.fired === 1.U && !validBit(writeBackResult.inst(11,7)).asBool && (writeBackResult.inst(11,7) === rs1Addr) && (robFile(writeBackResult.inst(11,7)) === writeBackResult.robAddr) && writeBackResult.inst(6,0) =/= fstore.U ))
   //     valid.rs1RobAddr := rs1Addr =/= decodeIssueBuffer.instruction(11,7) && ((~validBit(rs1Addr)).asBool && !(writeBackResult.fired === 1.U && !validBit(writeBackResult.inst(11,7)).asBool && (writeBackResult.inst(11,7) === rs1Addr) && (robFile(writeBackResult.inst(11,7)) === writeBackResult.robAddr) && writeBackResult.inst(6,0) =/= fstore.U ))
   //     rs1.data          := writeBackResult.writeBackData
   //   }.elsewhen(writeBackResult.fired === 1.U && !validBit(writeBackResult.inst(11,7)).asBool && (writeBackResult.inst(11,7) === rs1Addr) && (robFile(writeBackResult.inst(11,7)) === writeBackResult.robAddr) && writeBackResult.inst(6,0) =/= fstore.U ){
-  //     //*Here if the data is present in writeback take it directly and next instruction is not available yet
-  //     insState := 3.U
+  //     //*Here if the data is present in writeback take it directly and next instruction is not available y
   //     rs1.data          := writeBackResult.writeBackData
   //     valid.rs1Data     := true.B
   //     valid.rs1RobAddr  := false.B
-  //   }.otherwise {
-  //     insState := 4.U
+  //   }.otherwise
   //     valid.rs1Data    := validBit(rs1Addr).asBool
   //     valid.rs1RobAddr := (~validBit(rs1Addr)).asBool
   //   }
   //   when(writeBackResult.fired === 1.U && !validBitF(writeBackResult.inst(11,7)).asBool && (writeBackResult.inst(11,7) === rs1Addr) && (robFileF(writeBackResult.inst(11,7)) === writeBackResult.robAddr) && writeBackResult.inst(6,0) =/= fstore.U ){
-  //     rs1.data         := writeBackResult.writeBackData
-  //     insState := 5.U
+  //     rs1.data         := writeBackResult.writeBackDa
   //   }
   // }
 
@@ -605,8 +590,9 @@ class decode extends Module {
         valid.rs2Data := true.B
         valid.rs2RobAddr := false.B
       }.otherwise {
-        valid.rs2Data    := validBit(rs2Addr).asBool
-        valid.rs2RobAddr := (~validBit(rs2Addr)).asBool
+
+        valid.rs2Data    := validBitF(rs2Addr).asBool
+        valid.rs2RobAddr := (~validBitF(rs2Addr)).asBool
       }
       when(writeBackResult.fired === 1.U && !validBitF(writeBackResult.inst(11,7)).asBool && (writeBackResult.inst(11,7) === rs2Addr) && (fReg) && (robFileF(writeBackResult.inst(11,7)) === writeBackResult.robAddr) && writeBackResult.inst(6,0) =/= fstore.U && fReg ){
         rs2.data         := writeBackResult.writeBackData
@@ -945,8 +931,8 @@ class decode extends Module {
             is("hf14".U) { mhartid(0) := csrWriteData }
             //* floating point 
             is("h1".U) { fcsr(0) := Cat(fcsr(0)(31,5),csrWriteData(4,0))}
-            is("h2".U) { fcsr(0) := Cat(fcsr(0)(31,8),csrWriteData(7,5),fcsr(0)(4,0))}
-            is("h3".U) { fcsr(0) := csrWriteData }
+            is("h2".U) { fcsr(0) := Cat(fcsr(0)(31,8),csrWriteData(2,0),fcsr(0)(4,0))}
+            is("h3".U) { fcsr(0) := Cat(fcsr(0)(31,8),csrWriteData(7,0)) }
           }
         }
         is("b010".U) {
@@ -976,6 +962,10 @@ class decode extends Module {
             is("hf12".U) { marchid(0)     := csrReadData | csrWriteData }
             is("hf13".U) { mimpid(0)      := csrReadData | csrWriteData }
             is("hf14".U) { mhartid(0)     := csrReadData | csrWriteData }
+            //* floating point 
+            is("h1".U) { fcsr(0) := Cat(fcsr(0)(31,5),(csrReadData | csrWriteData)(4,0))}
+            is("h2".U) { fcsr(0) := Cat(fcsr(0)(31,8),(csrReadData | csrWriteData)(2,0),fcsr(0)(4,0))}
+            is("h3".U) { fcsr(0) := Cat(fcsr(0)(31,8),(csrReadData | csrWriteData)(7,0)) }
           }
         }
         is("b011".U) {
@@ -1036,6 +1026,10 @@ class decode extends Module {
             is("hf12".U) { marchid(0)     := csrWriteImmediate }
             is("hf13".U) { mimpid(0)      := csrWriteImmediate }
             is("hf14".U) { mhartid(0)     := csrWriteImmediate }
+            //* floating point 
+            is("h1".U) { fcsr(0) := Cat(fcsr(0)(31,5),csrWriteImmediate(4,0))}
+            is("h2".U) { fcsr(0) := Cat(fcsr(0)(31,8),csrWriteImmediate(2,0),fcsr(0)(4,0))}
+            is("h3".U) { fcsr(0) := Cat(fcsr(0)(31,8),(csrWriteImmediate)(7,0))  }
           }
         }
         is("b110".U) {
@@ -1098,6 +1092,10 @@ class decode extends Module {
             is("hf12".U) { marchid(0)     := csrReadData & ~csrWriteImmediate }
             is("hf13".U) { mimpid(0)      := csrReadData & ~csrWriteImmediate }
             is("hf14".U) { mhartid(0)     := csrReadData & ~csrWriteImmediate }
+            //* floating point 
+            is("h1".U) { fcsr(0) := Cat(fcsr(0)(31,5),(csrReadData & ~csrWriteImmediate)(4,0))}
+            is("h2".U) { fcsr(0) := Cat(fcsr(0)(31,8),(csrReadData & ~csrWriteImmediate)(2,0),fcsr(0)(4,0))}
+            is("h3".U) { fcsr(0) := Cat(fcsr(0)(31,8),(csrReadData & ~csrWriteImmediate)(7,0))  }
           }
 
         }

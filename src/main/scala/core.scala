@@ -16,6 +16,8 @@ class core extends Module {
 
   val iPort = IO(icache.lowLevelMem.cloneType)
 
+  val insState = IO(Output(UInt(3.W)))
+
   icache.lowLevelMem <> iPort
 
   val fetch = Module(new fetch(2))
@@ -45,6 +47,7 @@ class core extends Module {
     mtvecOut := mtvec(0)
     //val robEmpty = IO(Input(Bool()))
   } )
+  insState := decode.insState
 
   val interrProc = RegInit(false.B)
 

@@ -93,6 +93,9 @@ class system extends Module {
   })
 
   val memory = Module(new mainMemory)
+
+  val insState =IO(Output(UInt(3.W)))
+  insState := cpu.insState
    
   cpu.iPort <> memory.clients(0)
   cpu.dPort <> memory.clients(1)
