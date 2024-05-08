@@ -16,6 +16,10 @@ class system extends Module {
   val cpu = Module(new core {
     val registersOut = IO(Output(decode.registersOut.cloneType))
     registersOut := decode.registersOut
+
+    //For floating point
+    val registersOutF = IO(Output(decode.registersOutF.cloneType))
+    registersOutF := decode.registersOutF
     
     // Debug Signals
 
@@ -87,12 +91,8 @@ class system extends Module {
     val sampleOut = IO(Output(decode.csrWriteOut.cloneType))
     sampleOut := decode.csrWriteOut
   })
-  
-  val insState = IO(Output(UInt(3.W)))
 
   val memory = Module(new mainMemory)
-
-  insState := cpu.insState 
    
   cpu.iPort <> memory.clients(0)
   cpu.dPort <> memory.clients(1)
@@ -118,6 +118,9 @@ class system extends Module {
 
   val registersOut = IO(Output(cpu.registersOut.cloneType))
   registersOut := cpu.registersOut
+
+  val registersOutF = IO(Output(cpu.registersOutF.cloneType))
+  registersOutF := cpu.registersOutF
 
   val robOut = IO(Output(cpu.robOut.cloneType))
   robOut := cpu.robOut

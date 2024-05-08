@@ -391,13 +391,17 @@ class decode extends Module {
   val robFileF = Mem(regCount, UInt(robAddrWidth.W))
 
   /** Setting rs1 properties */
+  //For floating point
+  val isFCVT = ins(31,25) ==="b1101000".U && opcode === fcomp.U
+  val isFMVxw  = ins(31,25) ==="b1111000".U && opcode === fcomp.U
+
   when(opcode === auipc.U || opcode === jump.U || opcode === system.U) {
     rs1.data         := pc
     rs1.robAddr      := 0.U
     valid.rs1Data    := true.B
     valid.rs1RobAddr := false.B
   }
-  when(opcode === load.U || opcode === store.U || opcode === rops.U || opcode === iops.U || opcode === rops32.U || opcode === iops32.U || opcode === cjump.U || opcode === jumpr.U || opcode === amos.U || opcode === fload.U ) {
+  when(opcode === load.U || opcode === store.U || opcode === rops.U || opcode === iops.U || opcode === rops32.U || opcode === iops32.U || opcode === cjump.U || opcode === jumpr.U || opcode === amos.U || opcode === fload.U || opcode === fstore.U || (isFMVxw || isFCVT) ) {
     rs1.data         := registerFile(rs1Addr)
     rs1.robAddr      := robFile(rs1Addr)
     when(stateRegDecodeBuf === fullState) {                                                                   /** Check dependencies in adjacent instrucitons */
@@ -428,8 +432,7 @@ class decode extends Module {
   //MV ending .X read from integer
   //Both fload, fstore read form integer file
   //First to work with Freg reads
-  val isFCVT = ins(31,25) ==="b1101000".U && opcode === fcomp.U
-  val isFMVxw  = ins(31,25) ==="b1111000".U && opcode === fcomp.U
+  
   when(getInsType(opcode) === ftype.U && !( ((isFMVxw) || isFCVT))) { 
     // insState := 1.U       
     rs1.data         := registerFileF(rs1Addr)
@@ -457,34 +460,35 @@ class decode extends Module {
       // insState := 5.U
       rs1.data         := writeBackResult.writeBackData
     }
-  } .elsewhen(getInsType(opcode) === ftype.U || opcode === fstore.U) { 
-    //For MV.X , CVT._.W or CVT._.L, fload and fstore
-    //fload condition now works with load
-    rs1.data         := registerFile(rs1Addr)
-    rs1.robAddr      := robFile(rs1Addr)
-    insState := 1.U
-    when(stateRegDecodeBuf === fullState) { 
-      insState := 2.U
-      /** Check dependencies in adjacent instrucitons */
-      valid.rs1Data    := rs1Addr =/= decodeIssueBuffer.instruction(11,7) && (validBit(rs1Addr).asBool || (writeBackResult.fired === 1.U && !validBit(writeBackResult.inst(11,7)).asBool && (writeBackResult.inst(11,7) === rs1Addr) && (robFile(writeBackResult.inst(11,7)) === writeBackResult.robAddr) && writeBackResult.inst(6,0) =/= fstore.U ))
-      valid.rs1RobAddr := rs1Addr =/= decodeIssueBuffer.instruction(11,7) && ((~validBit(rs1Addr)).asBool && !(writeBackResult.fired === 1.U && !validBit(writeBackResult.inst(11,7)).asBool && (writeBackResult.inst(11,7) === rs1Addr) && (robFile(writeBackResult.inst(11,7)) === writeBackResult.robAddr) && writeBackResult.inst(6,0) =/= fstore.U ))
-      rs1.data          := writeBackResult.writeBackData
-    }.elsewhen(writeBackResult.fired === 1.U && !validBit(writeBackResult.inst(11,7)).asBool && (writeBackResult.inst(11,7) === rs1Addr) && (robFile(writeBackResult.inst(11,7)) === writeBackResult.robAddr) && writeBackResult.inst(6,0) =/= fstore.U ){
-      //*Here if the data is present in writeback take it directly and next instruction is not available yet
-      insState := 3.U
-      rs1.data          := writeBackResult.writeBackData
-      valid.rs1Data     := true.B
-      valid.rs1RobAddr  := false.B
-    }.otherwise {
-      insState := 4.U
-      valid.rs1Data    := validBit(rs1Addr).asBool
-      valid.rs1RobAddr := (~validBit(rs1Addr)).asBool
-    }
-    when(writeBackResult.fired === 1.U && !validBitF(writeBackResult.inst(11,7)).asBool && (writeBackResult.inst(11,7) === rs1Addr) && (robFileF(writeBackResult.inst(11,7)) === writeBackResult.robAddr) && writeBackResult.inst(6,0) =/= fstore.U ){
-      rs1.data         := writeBackResult.writeBackData
-      insState := 5.U
-    }
-  }
+  } 
+  // .elsewhen(getInsType(opcode) === ftype.U ) { 
+  //   //For MV.X , CVT._.W or CVT._.L, fload and fstore
+  //   //fload condition now works with load
+  //   rs1.data         := registerFile(rs1Addr)
+  //   rs1.robAddr      := robFile(rs1Addr)
+  //   insState := 1.U
+  //   when(stateRegDecodeBuf === fullState) { 
+  //     insState := 2.U
+  //     /** Check dependencies in adjacent instrucitons */
+  //     valid.rs1Data    := rs1Addr =/= decodeIssueBuffer.instruction(11,7) && (validBit(rs1Addr).asBool || (writeBackResult.fired === 1.U && !validBit(writeBackResult.inst(11,7)).asBool && (writeBackResult.inst(11,7) === rs1Addr) && (robFile(writeBackResult.inst(11,7)) === writeBackResult.robAddr) && writeBackResult.inst(6,0) =/= fstore.U ))
+  //     valid.rs1RobAddr := rs1Addr =/= decodeIssueBuffer.instruction(11,7) && ((~validBit(rs1Addr)).asBool && !(writeBackResult.fired === 1.U && !validBit(writeBackResult.inst(11,7)).asBool && (writeBackResult.inst(11,7) === rs1Addr) && (robFile(writeBackResult.inst(11,7)) === writeBackResult.robAddr) && writeBackResult.inst(6,0) =/= fstore.U ))
+  //     rs1.data          := writeBackResult.writeBackData
+  //   }.elsewhen(writeBackResult.fired === 1.U && !validBit(writeBackResult.inst(11,7)).asBool && (writeBackResult.inst(11,7) === rs1Addr) && (robFile(writeBackResult.inst(11,7)) === writeBackResult.robAddr) && writeBackResult.inst(6,0) =/= fstore.U ){
+  //     //*Here if the data is present in writeback take it directly and next instruction is not available yet
+  //     insState := 3.U
+  //     rs1.data          := writeBackResult.writeBackData
+  //     valid.rs1Data     := true.B
+  //     valid.rs1RobAddr  := false.B
+  //   }.otherwise {
+  //     insState := 4.U
+  //     valid.rs1Data    := validBit(rs1Addr).asBool
+  //     valid.rs1RobAddr := (~validBit(rs1Addr)).asBool
+  //   }
+  //   when(writeBackResult.fired === 1.U && !validBitF(writeBackResult.inst(11,7)).asBool && (writeBackResult.inst(11,7) === rs1Addr) && (robFileF(writeBackResult.inst(11,7)) === writeBackResult.robAddr) && writeBackResult.inst(6,0) =/= fstore.U ){
+  //     rs1.data         := writeBackResult.writeBackData
+  //     insState := 5.U
+  //   }
+  // }
 
   /** Setting rs2 properties */
   when(opcode === jumpr.U) {
@@ -576,8 +580,8 @@ class decode extends Module {
   //For fstore this is Simmediate
   //*For FCLASS, FMV rs2-> 0, not required; but functionally not a problem
   //*For FCVT the rs2 function is different
-  when(getInsType(opcode) === ftype.U || opcode === fload.U || opcode === fstore.U){ //For fload and fstore not included in ftype
-    //For MV, CLASS, SQRT, rs2 is zero
+  //For MV, CLASS, SQRT, rs2 is zero
+  when(getInsType(opcode) === ftype.U || opcode === fload.U || opcode === fstore.U){ //For fload and fstore not included in ftype 
     when(ins(31,25) === BitPat("b111?000") ||  //For MV and class
         ins(31,25) ==="b0101100".U ||          //For sqrt
         ins(31,25) === BitPat("b110?000") ){   //For CVT

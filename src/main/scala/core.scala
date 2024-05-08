@@ -16,8 +16,6 @@ class core extends Module {
 
   val iPort = IO(icache.lowLevelMem.cloneType)
 
-  val insState = IO(Output(UInt(3.W)))
-
   icache.lowLevelMem <> iPort
 
   val fetch = Module(new fetch(2))
@@ -36,6 +34,11 @@ class core extends Module {
     registersOut.zipWithIndex.foreach { case (outVal, i) => i match {
       case 32 => registersOut(32) := mstatus(0)
       case _ => outVal := registerFile(i)
+    }  }
+    //For floating point
+    val registersOutF = IO(Output(Vec(32, UInt(32.W))))
+    registersOutF.zipWithIndex.foreach { case (outVal, i) => i match {
+      case _ => outVal := registerFileF(i)
     }  }
     
     val mtvecOut = IO(Output(UInt(64.W)))
@@ -107,7 +110,6 @@ class core extends Module {
 
   decode.writeBackResult.inst := rob.commit.inst
   decode.writeBackResult.fFlags := rob.commit.eflags
-  insState := decode.insState
 
   val nonRobForwarding = WireInit(VecInit(Seq.fill(4)(new forwardPort Lit(_.valid -> false.B))))
 

@@ -232,6 +232,12 @@ int main(int argc, char* argv[]) {
       golden_model.show_state();
       cout << dec << (bench.tickcount + bench.dump_tick) << endl;bench.step(); bench.step(); bench.step(); break;
     }
+    if (bench.check_registersF(golden_model.freg_file) != 33) { 
+      cout << "Register mismatch at fregister " << dec << bench.check_registersF(golden_model.freg_file);
+      cout << " simulator value: " << setfill('0') << setw(8) << hex << bench.read_registerF(bench.check_registersF(golden_model.freg_file)) << endl;
+      golden_model.show_state();
+      cout << dec << (bench.tickcount + bench.dump_tick) << endl;bench.step(); bench.step(); bench.step(); break;
+    }
     sim_prev = golden_model.get_pc();
     int x = 1;
     if (0 && (bench.tickcount > 1032924UL)) {
