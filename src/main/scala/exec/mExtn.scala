@@ -99,8 +99,11 @@ class divider extends mExtn {
     val resultNegative = Bool()
   } Lit(_.request.valid -> false.B))
 
-  division.remainder := Cat(division.remainder(63, 0), division.quotient(64)) + Mux(division.remainder(64).asBool, division.divisor, - division.divisor)
-  division.quotient := Cat(division.quotient(63, 0), ~(Cat(division.remainder(63, 0), division.quotient(64)) + Mux(division.remainder(64).asBool, division.divisor, - division.divisor))(64))
+  when(division.counter.orR){
+    division.remainder := Cat(division.remainder(63, 0), division.quotient(64)) + Mux(division.remainder(64).asBool, division.divisor, - division.divisor)
+    division.quotient := Cat(division.quotient(63, 0), ~(Cat(division.remainder(63, 0), division.quotient(64)) + Mux(division.remainder(64).asBool, division.divisor, - division.divisor))(64))
+  }
+  
   division.counter := Mux(division.counter.orR, division.counter - 1.U, division.counter)
 
   when(inputs.fire && inputs.bits.mOp(2).asBool) {
@@ -161,5 +164,5 @@ class divider extends mExtn {
 
   when(output.fire) { results.valid := false.B }
 
-  inputs.ready := !division.counter.orR && !output.valid
+  inputs.ready := !division.counter.orR && !output.valid && !division.request.valid
 }

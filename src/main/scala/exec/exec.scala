@@ -111,6 +111,8 @@ class exec extends Module {
   // as long as the free buffer is available the module can accept new requests
   fromIssue.ready := bufferedEntries(1).free
 
+
+
   // bufferedEntries(0) will be current executing entry
   val nextExecutingEntry = Wire(bufferedEntries(0).cloneType)
 
@@ -155,6 +157,8 @@ class exec extends Module {
     ))
 
   Seq(multiply, divide).map(_.output.ready).foreach(_ := updateCurrentEntry)
+
+  val freshInput = RegInit(false.B)
 
   when(updateCurrentEntry) {
     bufferedEntries(0) := nextExecutingEntry
