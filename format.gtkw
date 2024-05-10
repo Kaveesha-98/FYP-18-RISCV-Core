@@ -1,0 +1,26 @@
+[*]
+[*] GTKWave Analyzer v3.3.104 (w)1999-2020 BSI
+[*] Fri May 10 05:15:07 2024
+[*]
+[dumpfile] "/media/Uni/Intern-projects/Core-modification/fork/FYP-18-RISCV-Core/system_trace.vcd"
+[dumpfile_mtime] "Fri May 10 05:10:33 2024"
+[dumpfile_size] 296220505
+[savefile] "/media/Uni/Intern-projects/Core-modification/fork/FYP-18-RISCV-Core/format.gtkw"
+[timestart] 8
+[size] 1920 1017
+[pos] 1459 -226
+*-4.000000 10 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1
+[treeopen] TOP.
+[treeopen] TOP.system.
+[treeopen] TOP.system.cpu.
+[sst_width] 195
+[signals_width] 162
+[sst_expanded] 1
+[sst_vpaned_height] 292
+@28
+TOP.clock
+TOP.reset
+@23
+TOP.registersOutF_15[31:0]
+[pattern_trace] 1
+[pattern_trace] 0

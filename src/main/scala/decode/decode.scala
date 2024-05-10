@@ -614,7 +614,7 @@ class decode extends Module {
         }
       }
     } .otherwise{                 //Some instructions write in integer regs
-      when(writeBackResult.fired === 1.U && validBit(writeBackResult.inst(11,7)) === 0.U && writeBackResult.inst(11,7) =/= 0.U && writeBackResult.inst(6,0) =/= store.U && writeBackResult.inst(6,0) =/= cjump.U) {
+      when(writeBackResult.fired === 1.U && validBit(writeBackResult.inst(11,7)) === 0.U && writeBackResult.inst(11,7) =/= 0.U && writeBackResult.inst(6,0) =/= store.U && writeBackResult.inst(6,0) =/= cjump.U && writeBackResult.inst(6,0) =/= fstore.U ) {
         registerFile(writeBackResult.inst(11,7))  := writeBackResult.writeBackData
         when(robFile(writeBackResult.inst(11,7)) === writeBackResult.robAddr) {
           validBit(writeBackResult.inst(11,7))    := 1.U

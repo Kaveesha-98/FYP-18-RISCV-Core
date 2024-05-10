@@ -1,3 +1,4 @@
+#include <cstdio>
 #include <iostream>
 #include <fstream>
 #include <string>
@@ -232,6 +233,13 @@ int main(int argc, char* argv[]) {
     if (bench.check_registers(golden_model.reg_file, golden_model.get_mstatus())) { 
       cout << "Register mismatch at register " << dec << bench.check_registers(golden_model.reg_file, golden_model.get_mstatus());
       cout << " simulator value: " << setfill('0') << setw(16) << hex << bench.read_register(bench.check_registers(golden_model.reg_file, golden_model.get_mstatus())) << endl;
+      golden_model.show_state();
+      cout << dec << (bench.tickcount + bench.dump_tick) << endl;bench.step(); bench.step(); bench.step(); bench.step(); bench.step(); break;
+    }
+    if (bench.check_registersF(golden_model.freg_file) != 33) { 
+      cout << "Register mismatch at fregister " << dec << bench.check_registersF(golden_model.freg_file);
+      printf(" simulator value: %016x\n",bench.read_registerF(bench.check_registersF(golden_model.freg_file)));
+      // cout << " simulator value: " << setfill('0') << setw(8) << bench.read_registerF(bench.check_registersF(golden_model.freg_file)) << endl;
       golden_model.show_state();
       cout << dec << (bench.tickcount + bench.dump_tick) << endl;bench.step(); bench.step(); bench.step(); bench.step(); bench.step(); break;
     }

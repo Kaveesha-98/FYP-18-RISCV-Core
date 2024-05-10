@@ -167,7 +167,7 @@ class exec extends Module {
     bufferedEntries(1).src1         := fromIssue.src1
     bufferedEntries(1).src2         := fromIssue.src2
     bufferedEntries(1).writeData    := fromIssue.writeData
-    bufferedEntries(1).instruction  := fromIssue.instruction 
+    bufferedEntries(1).instruction  := Mux(fromIssue.instruction(6,2) === BitPat("b0?001"), Cat(fromIssue.instruction(31,3),0.U(1.W),fromIssue.instruction(1,0)), fromIssue.instruction)
   }
 
   // buffered entry is sent to processing
