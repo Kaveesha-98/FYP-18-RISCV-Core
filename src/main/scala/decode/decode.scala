@@ -642,8 +642,12 @@ class decode extends Module {
     }
   }
 
+	def isFloatingPoint(inst: UInt):Bool = {
+		((inst(6,5) === "b10".U(2.W)) || (inst(4,2) === "b001".U(3.W))) && ((inst(6,5) =/= "b11".U(2.W)/*jalr not floating point*/))
+	}
   /** Rob File writing and deasserting valid bit for rd */
-  when((decodeIssueBuffer.insType === rtype.U || decodeIssueBuffer.insType === utype.U || decodeIssueBuffer.insType === itype.U || decodeIssueBuffer.insType === jtype.U) && decodeIssueBuffer.instruction(11,7) =/= 0.U) {
+  when(Seq(rtype, utype, itype, jtype).map(_.U === decodeIssueBuffer.insType).reduce(_ || _) && decodeIssueBuffer.instruction(11,7).orR && !isFloatingPoint(decodeIssueBuffer.instruction))/*
+  when((decodeIssueBuffer.insType === rtype.U || decodeIssueBuffer.insType === utype.U || decodeIssueBuffer.insType === itype.U || decodeIssueBuffer.insType === jtype.U) && decodeIssueBuffer.instruction(11,7) =/= 0.U)*/ {
     when(toExec.fired) {
       robFile(decodeIssueBuffer.instruction(11,7))     := toExec.robAddr
       validBit(decodeIssueBuffer.instruction(11,7))    := 0.U
