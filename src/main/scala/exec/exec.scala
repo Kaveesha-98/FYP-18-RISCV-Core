@@ -108,6 +108,19 @@ class exec extends Module {
     _.instruction -> 0.U
 	))))
 
+  //fanout reduce
+  val fpubuf = ((RegInit((new Bundle{
+    val src1 = UInt(64.W)
+    val src2 = UInt(64.W)
+    val instruction = UInt(32.W)
+	}).Lit(
+		_.src1	      -> 0.U,
+		_.src2 		    -> 0.U,
+    _.instruction -> 0.U
+	))))
+  //ends here
+
+
   // as long as the free buffer is available the module can accept new requests
   fromIssue.ready := bufferedEntries(1).free
 
@@ -162,6 +175,9 @@ class exec extends Module {
 
   when(updateCurrentEntry) {
     bufferedEntries(0) := nextExecutingEntry
+    fpubuf.src1 := nextExecutingEntry.src1
+    fpubuf.src2 := nextExecutingEntry.src2
+    fpubuf.instruction := nextExecutingEntry.instruction
   }
 
   // when current entry can't be processed, the next one is buffered
@@ -241,9 +257,9 @@ class exec extends Module {
     })(instruction(4, 2))
   }
   
-  FPU.io.a := bufferedEntries(0).src1
-  FPU.io.b := bufferedEntries(0).src2
-  FPU.io.inst := bufferedEntries(0).instruction
+  FPU.io.a := fpubuf.src1
+  FPU.io.b := fpubuf.src2
+  FPU.io.inst := fpubuf.instruction
   FPU.io.toRobReady := toRob.ready
   toMemory.insState := FPU.io.insState
   FPU.io.inValid := (Cat(bufferedEntries(0).instruction(31,27),bufferedEntries(0).instruction(6,2))===BitPat("b0?01110100")) && !bufferedEntries(0).free
