@@ -16,6 +16,8 @@ class core extends Module {
 
   val iPort = IO(icache.lowLevelMem.cloneType)
 
+  val insState = IO(Output(UInt(3.W)))
+
   icache.lowLevelMem <> iPort
 
   val fetch = Module(new fetch(2))
@@ -35,11 +37,17 @@ class core extends Module {
       case 32 => registersOut(32) := mstatus(0)
       case _ => outVal := registerFile(i)
     }  }
+    //For floating point
+    val registersOutF = IO(Output(Vec(32, UInt(32.W))))
+    registersOutF.zipWithIndex.foreach { case (outVal, i) => i match {
+      case _ => outVal := registerFileF(i)
+    }  }
     
     val mtvecOut = IO(Output(UInt(64.W)))
     mtvecOut := mtvec(0)
     //val robEmpty = IO(Input(Bool()))
   } )
+  insState := decode.insState
 
   val interrProc = RegInit(false.B)
 
@@ -96,14 +104,15 @@ class core extends Module {
     _ := (decode.writeBackResult.ready && rob.commit.ready)
   )
   // these connections are incorrect an need to be fixed
-  decode.writeBackResult.rdAddr := rob.commit.rdAddr
+  // decode.writeBackResult.rdAddr := rob.commit.rdAddr
   decode.writeBackResult.writeBackData := rob.commit.writeBackData
   decode.writeBackResult.robAddr := rob.commit.robAddr
   decode.writeBackResult.execptionOccured := rob.commit.execptionOccured
   decode.writeBackResult.mcause := rob.commit.mcause
   decode.writeBackResult.mepc := rob.commit.mepc
 
-  decode.writeBackResult.opcode := rob.commit.opcode
+  decode.writeBackResult.inst := rob.commit.inst
+  decode.writeBackResult.fFlags := rob.commit.eflags
 
   val nonRobForwarding = WireInit(VecInit(Seq.fill(4)(new forwardPort Lit(_.valid -> false.B))))
 
@@ -143,7 +152,7 @@ class core extends Module {
   exec.fromIssue.src2 := Mux(decode.toExec.src2.fromRob, Mux(forwardFromNonRobValid(decode.toExec.src2.robAddr), forwardToIssue(decode.toExec.src2.robAddr), rob.fromDecode.fwdrs2.value), decode.toExec.src2.data)
   exec.fromIssue.writeData := Mux(decode.toExec.writeData.fromRob, Mux(forwardFromNonRobValid(decode.toExec.writeData.robAddr), forwardToIssue(decode.toExec.writeData.robAddr), rob.fromDecode.fwdrs2.value), decode.toExec.writeData.data)
   exec.fromIssue.instruction := decode.toExec.instruction
-  rob.fromDecode.instOpcode := decode.toExec.instruction(6, 0)
+  rob.fromDecode.inst:= decode.toExec.instruction
   rob.fromDecode.rd := decode.toExec.instruction(11, 7)
   rob.fromDecode.fwdrs1.robAddr := decode.toExec.src1.robAddr
   rob.fromDecode.fwdrs2.robAddr := Mux(decode.toExec.writeData.fromRob, decode.toExec.writeData.robAddr, decode.toExec.src2.robAddr)
@@ -157,6 +166,7 @@ class core extends Module {
   rob.fromExec.robAddr := exec.toRob.robAddr
   rob.fromExec.execeptionOccured := exec.toRob.execptionOccured
   rob.fromExec.mcause := exec.toRob.mcause
+  rob.fromExec.eflags := exec.toRob.eflags
 
   val memAccess = Module(new pipeline.memAccess.memAccess)
   val peripheral = IO(memAccess.peripherals.cloneType)

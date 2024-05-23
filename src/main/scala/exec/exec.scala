@@ -4,6 +4,7 @@ import chisel3._
 import chisel3.util._
 import chisel3.experimental.BundleLiterals._
 import chisel3.experimental.IO
+import hardfloat._
 
 // definition of all ports can be found here
 import pipeline.ports._
@@ -22,6 +23,9 @@ class pushToMemory extends composableInterface {
   val memAddress  = Output(UInt(64.W))
   val writeData   = Output(UInt(64.W))
   val instruction = Output(UInt(32.W))
+  //! Debug
+  val insState = Output(UInt(3.W))
+  // val fwrite      = Output(Bool())
 }
 
 /* class pushExecResultToRob extends composableInterface {
@@ -60,6 +64,8 @@ class exec extends Module {
     val instruction = UInt(32.W)
     val mcause = UInt(64.W)
     val execptionOccured = Bool()
+	val eflags = UInt(5.W)
+	// val fwrite = Bool()
   }).Lit(
     _.waiting -> false.B,
     _.robAddr -> 0.U,
@@ -72,13 +78,18 @@ class exec extends Module {
   toRob.ready := robPushBuffer.waiting && (robPushBuffer.instruction(6, 2) =/= "b00000".U && robPushBuffer.instruction(6, 2) =/= "b01011".U)
   toRob.robAddr := robPushBuffer.robAddr
   toRob.execResult := robPushBuffer.execResult
+  toRob.eflags := robPushBuffer.eflags
+  // toRob.fwrite := robPushBuffer.fwrite
 
   toMemory.ready        := passToMem
   toMemory.robAddr      := robPushBuffer.robAddr
   toMemory.memAddress   := robPushBuffer.execResult
   toMemory.writeData    := robPushBuffer.writeData
-  toMemory.instruction  := robPushBuffer.instruction 
-
+  toMemory.instruction := robPushBuffer.instruction
+  // toMemory.fwrite := robPushBuffer.fwrite
+  //! Debug signals
+  val insState = WireInit(0.U(3.W))
+  toMemory.insState := insState
   val fromIssue = IO(new pullToPipeline)
 
   val bufferedEntries = Seq.fill(2)((RegInit((new Bundle{
@@ -97,8 +108,23 @@ class exec extends Module {
     _.instruction -> 0.U
 	))))
 
+  //fanout reduce
+  val fpubuf = ((RegInit((new Bundle{
+    val src1 = UInt(64.W)
+    val src2 = UInt(64.W)
+    val instruction = UInt(32.W)
+	}).Lit(
+		_.src1	      -> 0.U,
+		_.src2 		    -> 0.U,
+    _.instruction -> 0.U
+	))))
+  //ends here
+
+
   // as long as the free buffer is available the module can accept new requests
   fromIssue.ready := bufferedEntries(1).free
+
+
 
   // bufferedEntries(0) will be current executing entry
   val nextExecutingEntry = Wire(bufferedEntries(0).cloneType)
@@ -111,9 +137,13 @@ class exec extends Module {
     nextExecutingEntry.src1         := fromIssue.src1
     nextExecutingEntry.src2         := fromIssue.src2
     nextExecutingEntry.writeData    := fromIssue.writeData
-    nextExecutingEntry.instruction  := fromIssue.instruction 
+    //nextExecutingEntry.instruction  := fromIssue.instruction 
+	nextExecutingEntry.instruction  := Mux(fromIssue.instruction(6,2) === BitPat("b0?001"), Cat(fromIssue.instruction(31,3),0.U(1.W),fromIssue.instruction(1,0)), fromIssue.instruction)
+	
+	
   }
 
+  val FPU = Module(new fpu(8, 24))
   val multiply = Module(new multiplier)
   val divide = Module(new divider)
   def isMExtenMul(x: UInt) = (x(6, 2) === BitPat("b011?0")) && x(25).asBool
@@ -135,13 +165,19 @@ class exec extends Module {
     (
       (!robPushBuffer.waiting || toRob.fired) && 
       (!passToMem || toMemory.fired) && 
-      (!isMExtenMul(bufferedEntries(0).instruction) || Seq(multiply, divide).map(_.output.valid).reduce(_ || _))
+      (!isMExtenMul(bufferedEntries(0).instruction) || Seq(multiply, divide).map(_.output.valid).reduce(_ || _)) &&
+	  (!(Cat(bufferedEntries(0).instruction(31,27),bufferedEntries(0).instruction(6,2))===BitPat("b0?01110100")) || FPU.io.valid_div || FPU.io.valid_sqrt)
     ))
 
   Seq(multiply, divide).map(_.output.ready).foreach(_ := updateCurrentEntry)
 
+  val freshInput = RegInit(false.B)
+
   when(updateCurrentEntry) {
     bufferedEntries(0) := nextExecutingEntry
+    fpubuf.src1 := nextExecutingEntry.src1
+    fpubuf.src2 := nextExecutingEntry.src2
+    fpubuf.instruction := nextExecutingEntry.instruction
   }
 
   // when current entry can't be processed, the next one is buffered
@@ -151,7 +187,7 @@ class exec extends Module {
     bufferedEntries(1).src1         := fromIssue.src1
     bufferedEntries(1).src2         := fromIssue.src2
     bufferedEntries(1).writeData    := fromIssue.writeData
-    bufferedEntries(1).instruction  := fromIssue.instruction 
+    bufferedEntries(1).instruction  := Mux(fromIssue.instruction(6,2) === BitPat("b0?001"), Cat(fromIssue.instruction(31,3),0.U(1.W),fromIssue.instruction(1,0)), fromIssue.instruction)
   }
 
   // buffered entry is sent to processing
@@ -211,7 +247,8 @@ class exec extends Module {
     // possible place for resource optimization
     VecInit.tabulate(7)(i => i match {
       case 0 => (src1 + src2) // address calculation for memory access
-      case 1 => (src2 + 4.U) // jal link address
+      //case 1 => (src2 + 4.U) // jal link address
+      case 1 => Mux(instruction(6).asBool, (src2 + 4.U), (src1 + src2)) // jal link address or flw,fsw mem address
       case 2 => (src1 + src2) //(63, 0) // filler
       case 3 => Mux(instruction(6).asBool, (src1 + src2), src1) //(63, 0) jalr link address
       case 4 => Mux(instruction === BitPat("b0000001??????????????????0110011"), result64M, arithmetic64) // (63, 0) op-imm, op
@@ -219,15 +256,28 @@ class exec extends Module {
       case 6 => Mux(instruction === BitPat("b0000001??????????????????0111011"), result32M, arithmetic32) // op-32, op-imm-32
     })(instruction(4, 2))
   }
+  
+  FPU.io.a := fpubuf.src1
+  FPU.io.b := fpubuf.src2
+  FPU.io.inst := fpubuf.instruction
+  FPU.io.toRobReady := toRob.ready
+  toMemory.insState := FPU.io.insState
+  FPU.io.inValid := (Cat(bufferedEntries(0).instruction(31,27),bufferedEntries(0).instruction(6,2))===BitPat("b0?01110100")) && !bufferedEntries(0).free
+  
 
   val memAddress = bufferedEntries(0).src1 + bufferedEntries(0).src2
+  val funct5List = List("b10000".U,"b10001".U,"b10010".U,"b10011".U,"b10100".U) //F-OP and 3 operand
+                                                                                        
+  val fpuOp = funct5List.map(funct5List => bufferedEntries(0).instruction(6,2) === funct5List).reduce(_ || _)
 
   when(updateCurrentEntry && ((!robPushBuffer.waiting || toRob.fired) && (!passToMem || toMemory.fired))) {
-    robPushBuffer.execResult := execResult
+    robPushBuffer.execResult := Mux(fpuOp, FPU.io.result, execResult)
     robPushBuffer.robAddr := bufferedEntries(0).robAddr
     robPushBuffer.writeData := bufferedEntries(0).writeData
     robPushBuffer.instruction := bufferedEntries(0).instruction
     robPushBuffer.execptionOccured := bufferedEntries(0).instruction(6, 0) === "h73".U
+    robPushBuffer.eflags := FPU.io.ef 
+    // robPushBuffer.fwrite := FPU.io.fwrite
   }
 
   when(robPushBuffer.waiting) {
@@ -245,8 +295,4 @@ class exec extends Module {
   }
   toRob.execptionOccured := robPushBuffer.execptionOccured
   toRob.mcause := Mux(robPushBuffer.instruction(31).asBool, (1.U(64.W) << 63) | 7.U(64.W),Mux(robPushBuffer.instruction === 115.U, 11.U, 3.U))
-}
-
-object exec extends App {
-  (new stage.ChiselStage).emitVerilog(new exec)
 }

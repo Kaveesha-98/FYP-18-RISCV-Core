@@ -1,0 +1,70 @@
+[*]
+[*] GTKWave Analyzer v3.3.104 (w)1999-2020 BSI
+[*] Fri May 10 09:46:21 2024
+[*]
+[dumpfile] "/media/Uni/Intern-projects/Core-modification/fork/FYP-18-RISCV-Core/system_trace.vcd"
+[dumpfile_mtime] "Fri May 10 09:22:43 2024"
+[dumpfile_size] 4677138314
+[savefile] "/media/Uni/Intern-projects/Core-modification/fork/FYP-18-RISCV-Core/format.gtkw"
+[timestart] 20344604
+[size] 1920 1051
+[pos] -2381 -209
+*-4.000000 20344640 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1
+[treeopen] TOP.
+[treeopen] TOP.system.
+[treeopen] TOP.system.cpu.
+[treeopen] TOP.system.cpu.exec.
+[sst_width] 254
+[signals_width] 380
+[sst_expanded] 1
+[sst_vpaned_height] 304
+@28
+TOP.clock
+TOP.reset
+@22
+TOP.registersOut_15[63:0]
+@28
+TOP.system.cpu.decode.robFile(15)[2:0]
+TOP.system.cpu.decode.fromFetch_fired
+@22
+TOP.system.cpu.decode.fromFetch_instruction[31:0]
+TOP.system.cpu.decode.fromFetch_pc[63:0]
+@28
+[color] 1
+TOP.system.cpu.decode.writeBackResult_fired
+@22
+TOP.system.cpu.decode.writeBackResult_writeBackData[63:0]
+TOP.system.cpu.decode.writeBackResult_inst[31:0]
+TOP.registersOut_14[63:0]
+TOP.registersOut_15[63:0]
+@28
+TOP.system.cpu.exec.fromIssue_fired
+@22
+TOP.system.cpu.exec.fromIssue_src1[63:0]
+TOP.system.cpu.exec.fromIssue_src2[63:0]
+TOP.system.cpu.exec.fromIssue_instruction[31:0]
+@28
+TOP.system.cpu.exec.fromIssue_robAddr[2:0]
+TOP.system.cpu.exec.toRob_fired
+TOP.system.cpu.exec.toRob_robAddr[2:0]
+@22
+TOP.system.cpu.exec.toRob_execResult[63:0]
+@28
+TOP.system.cpu.exec.divide_output_ready
+TOP.system.cpu.exec.divide_inputs_valid
+TOP.system.cpu.exec.divide_inputs_ready
+@22
+TOP.system.cpu.exec.divide_inputs_bits_src1[63:0]
+TOP.system.cpu.exec.divide_inputs_bits_src2[63:0]
+@28
+TOP.system.cpu.exec.divide_output_valid
+@22
+TOP.system.cpu.exec.divide_output_bits[63:0]
+TOP.system.cpu.exec.divide.division_remainder[64:0]
+TOP.system.cpu.exec.divide.division_quotient[64:0]
+TOP.system.cpu.exec.divide.division_counter[6:0]
+TOP.system.cpu.exec.divide.results_data_remainder32Signed[64:0]
+@23
+TOP.system.cpu.exec.divide.results_data_remainder64Unsigned[64:0]
+[pattern_trace] 1
+[pattern_trace] 0

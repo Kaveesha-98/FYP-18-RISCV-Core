@@ -81,6 +81,28 @@ object utils {
       is(amos.U) {
         insType := rtype.U
       }
+      // For floating point
+      is(fload.U) {         
+        insType := itype.U
+      }
+      is(fstore.U) {        
+        insType := stype.U
+      }
+      is(fmadd.U) {
+        insType := ftype.U
+      }
+      is(fmsub.U) {
+        insType := ftype.U
+      }
+      is(fnmsub.U) {
+        insType := ftype.U
+      }
+      is(fnmadd.U) {
+        insType := ftype.U
+      }
+      is(fcomp.U) {
+        insType := ftype.U
+      }
     }
     insType
   }
@@ -107,6 +129,10 @@ object utils {
         immediate := Fill(dataWidth, 0.U)
       }
       is(rtype.U) {
+        immediate := Fill(dataWidth, 0.U)
+      }
+      // For floating point
+      is(ftype.U) {
         immediate := Fill(dataWidth, 0.U)
       }
     }

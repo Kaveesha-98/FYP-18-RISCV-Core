@@ -17,6 +17,14 @@ object constants {
   val amos = "b0101111"
   val iops32 = "b0011011"
   val rops32 = "b0111011"
+  // For floating point
+  val fload  = "b0000111"
+  val fstore = "b0100111"
+  val fmadd  = "b1000011"
+  val fmsub  = "b1000111"
+  val fnmsub = "b1001011"
+  val fnmadd = "b1001111"
+  val fcomp  = "b1010011"
 
   val rtype = "b000"
   val itype = "b001"
@@ -25,6 +33,8 @@ object constants {
   val utype = "b100"
   val jtype = "b101"
   val ntype = "b110"
+  // For floating point
+  val ftype = "b111"
 
   val dataWidth = 64
   val insAddrWidth = 32
