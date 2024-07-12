@@ -26,4 +26,5 @@ object coreConfiguration {
     val dCacheTagWidth = 32 - dCacheLineWidth - dCacheDoubleWordOffsetWidth - 3
     val dCacheBlockSize = (1 << dCacheDoubleWordOffsetWidth)
     val instructionBase = 0x0000000040000000L
+    val XLEN = 64
 }
