@@ -12,10 +12,10 @@
 start_gui
 create_project vivado vivado -part xc7z020clg400-1
 set_property board_part digilentinc.com:zybo-z7-20:part0:1.2 [current_project]
-add_files -norecurse {/home/kaveesha/Documents/github/FYP-18-RISCV-Core/psClint.v /home/kaveesha/Documents/github/FYP-18-RISCV-Core/bootROM.v /home/kaveesha/Documents/github/FYP-18-RISCV-Core/core.v}
+add_files -norecurse {psClint.v bootROM.v core.v}
 update_compile_order -fileset sources_1
 update_compile_order -fileset sources_1
-import_files -norecurse {/home/kaveesha/Documents/github/FYP-18-RISCV-Core/src/main/resources/zynq/iCacheRegisters.v /home/kaveesha/Documents/github/FYP-18-RISCV-Core/src/main/resources/zynq/dCacheRegisters.v}
+import_files -norecurse {src/main/resources/zynq/iCacheRegisters.v src/main/resources/zynq/dCacheRegisters.v}
 update_compile_order -fileset sources_1
 create_ip -name blk_mem_gen -vendor xilinx.com -library ip -version 8.4 -module_name blk_d_cache
 set_property -dict [list CONFIG.Component_Name {blk_d_cache} CONFIG.Memory_Type {Simple_Dual_Port_RAM} CONFIG.Use_Byte_Write_Enable {true} CONFIG.Byte_Size {8} CONFIG.Write_Width_A {512} CONFIG.Write_Depth_A {64} CONFIG.Read_Width_A {512} CONFIG.Operating_Mode_A {NO_CHANGE} CONFIG.Enable_A {Always_Enabled} CONFIG.Write_Width_B {128} CONFIG.Read_Width_B {128} CONFIG.Enable_B {Always_Enabled} CONFIG.Register_PortA_Output_of_Memory_Primitives {false} CONFIG.Register_PortB_Output_of_Memory_Primitives {false} CONFIG.Port_B_Clock {100} CONFIG.Port_B_Enable_Rate {100}] [get_ips blk_d_cache]
@@ -82,8 +82,8 @@ endgroup
 startgroup
 make_bd_pins_external  [get_bd_pins psClint_0/RUNNING]
 endgroup
-add_files -fileset constrs_1 -norecurse /home/kaveesha/Documents/github/FYP-18-RISCV-Core/src/main/resources/zynq/bootrom_linux.xdc
-import_files -fileset constrs_1 /home/kaveesha/Documents/github/FYP-18-RISCV-Core/src/main/resources/zynq/bootrom_linux.xdc
+add_files -fileset constrs_1 -norecurse src/main/resources/zynq/bootrom_linux.xdc
+import_files -fileset constrs_1 src/main/resources/zynq/bootrom_linux.xdc
 validate_bd_design
 make_wrapper -files [get_files vivado/vivado.srcs/sources_1/bd/riscv_soc/riscv_soc.bd] -top
 add_files -norecurse vivado/vivado.srcs/sources_1/bd/riscv_soc/hdl/riscv_soc_wrapper.v
