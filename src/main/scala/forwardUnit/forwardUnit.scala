@@ -86,7 +86,36 @@ class forwardUnit extends Module {
   }
   fromDecode.ready := canAllocate
   fromDecode.robAddr := allocAddr // TODO: 'robAddr' needs to renamed everywhere
-  fromDecode.fwdrs1 := resultsBuffer(fromDecode.fwdrs1.robAddr)
+  
+  // Forwarding data to exec
+  fromDecode.fwdrs1.value := resultsBuffer(fromDecode.fwdrs1.robAddr).result
+  fromDecode.fwdrs1.valid := resultsBuffer(fromDecode.fwdrs1.robAddr).valid
+  fromDecode.fwdrs2.value := resultsBuffer(fromDecode.fwdrs2.robAddr).result
+  fromDecode.fwdrs2.valid := resultsBuffer(fromDecode.fwdrs2.robAddr).valid
+
+  // Writing to resultsBuffer from execution ports
+  when(fromExec.fired) {
+    resultsBuffer(fromExec.robAddr).result := fromExec.execResult
+    resultsBuffer(fromExec.robAddr).valid := true.B
+  }
+  when(fromMem.fired) {
+    resultsBuffer(fromMem.robAddr).result := fromMem.writeBackData
+    resultsBuffer(fromMem.robAddr).valid := true.B
+  }
+
+  // incrementing the pointers
+  allocAddr := allocAddr +& fromDecode.fired.asUInt
+  freeAddr := freeAddr +& freeEntry.fired.asUInt
+
+  // Hardwiring outputs that are soon to be removed
+  carryOutFence.ready := false.B
+  freeEntry.robAddr := 0.U
+  freeEntry.rdAddr := 0.U
+  freeEntry.opcode := 0.U
+  freeEntry.writeBackData := 0.U
+  freeEntry.execptionOccured := false.B
+  freeEntry.mcause := 0.U
+  freeEntry.mepc := 0.U
 }
 
 object forwardUnit extends App {
