@@ -10,6 +10,41 @@ import pipeline.decode.utils._
 import pipeline.configuration.coreConfiguration._
 import pipeline.ports._
 
+class registerfile extends Module {
+  val readPortsInRegFile = 2
+  val regFileAddrSize = 5
+  // I/O
+  val rs1, rs2= IO(Input(UInt(regFileAddrSize.W)))
+  val rs1ReadData, rs2ReadData = IO(Output(UInt(XLEN.W)))
+  val writeback = IO(Input(new Bundle {
+    val valid = Bool()
+    val rd = UInt(regFileAddrSize.W)
+    val data = UInt(XLEN.W)
+  }))
+
+  // Since BRAM has only 1 read ports and only 1 write port
+  // To have two read ports, we will instantiate two BRAMs
+  // that has identical data across them
+
+  // toConsider: Since the registers do not have a reset 
+  // condition, noise may cause to read two values for same
+  // architectural register
+  // Hence, do we need spend a few cycles after reset to
+  // reset all registers in BRAM to common value?
+  // Normally software does this part. Maybe move this to Boot ROM
+
+  val regFiles = Seq.fill(readPortsInRegFile)(SyncReadMem(1 << regFileAddrSize, UInt(XLEN.W)))
+
+  (Seq(rs1, rs2) zip regFiles).zip(Seq(rs1ReadData, rs2ReadData))
+  .foreach{ case((rs, regfile), readPort) => {
+    val doForward = RegNext((writeback.rd === rs) && writeback.valid, false.B)
+    // reading
+    readPort := Mux(doForward, RegNext(writeback.data), regfile.read(rs))
+    // writing
+    when(writeback.valid) { regfile.write(writeback.rd, writeback.data) }
+  }}
+}
+
 /**
   * Functionality - Must communicate the pc of the first instruction to execute
   * through fromFetch port.
@@ -44,9 +79,21 @@ import pipeline.ports._
   * When an instruction is being issued to the execution pipeline
   * through toExec, a fwdAddr will be assigned to the destination
   * register. To avoid RAW data dependencies, an instruction that
-  * is dependent on the fi
+  * is dependent on a transient instruction, then it the result 
+  * can be forwarded from forwardUnit when being issued to execution
+  * pipeline using the fwdAddr assigned to the source register.
   * 
+  * Once an system instruction enters through fromFetch, fromFetch.ready
+  * is driven low to stop accepting more instructions from fetch
+  * unit. The instruction is then issued to the execution pipeline.
+  * Once the instruction is fired from writeBackResult, we execute
+  * the instruction.
   * 
+  * For Zicsr instructions writeBackData will data read from 
+  * registerfile. The single writeport of the registerfile will
+  * be used to write data in CSR to register file
+  * 
+  * Plan to implement illegal instruction and misalign exceptions
   * 
   * Details about the IO can be found on common/ports.scala
   *
