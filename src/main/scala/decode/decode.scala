@@ -99,6 +99,18 @@ class registerfile extends Module {
   *
   */
 class decode extends Module {
+  val regFileAddrSize = 5
+  def rs1Of(instruction: UInt) = instruction(19, 15)
+  def rs2Of(instruction: UInt) = instruction(24, 20)
+  def rdOf(instruction: UInt) = instruction(11, 7)
+  // rd note valid for stores and conditional branches
+  def rdValid(instruction: UInt) = 
+    (instruction(5, 2) === "b1000".U(4.W)) || (instruction(6, 2) === "b01001".U(5.W))
+  def rs1FieldPresent(instruction: UInt) = 
+    !(
+      Cat(instruction(14), instruction(6, 2)) === "b111100".U(6.W) // || // system instructions without rs1
+
+    )
    /**
     * Inputs and Outputs of the module
     */
@@ -111,6 +123,87 @@ class decode extends Module {
   val decodePC = IO(Output(UInt(64.W)))
   val decodeIns = IO(Output(UInt(32.W)))
   val allowInterrupt = IO(Output(Bool()))
+
+  // architectural registers
+  val registers = Module(new registerfile)
+
+  // Requesting the data of operand from register file
+  registers.rs1 := rs1Of(fromFetch.instruction)
+  registers.rs2 := rs2Of(fromFetch.instruction)
+
+  // registerfile reads takes one cycle.
+  /**
+    * Once the rs* fields are given to read from registerfile,
+    * it is buffered in waitingForRead for one cycle. After one
+    * cycle it is sent to toExecDriver to be presented to toExec
+    */
+  val waitingForRead = RegInit(new Bundle {
+    val valid = Bool()
+    val instruction = fromFetch.instruction.cloneType
+    val pc = fromFetch.pc.cloneType
+  } Lit(_.valid -> false.B)) 
+
+  // These drivers will directly drive toExec port
+  val toExecDriver = RegInit(new Bundle {
+    val valid = Bool()
+    val src1 = toExec.src1.cloneType
+    val src2 = toExec.src1.cloneType
+    val writedata = toExec.writeData.cloneType
+    val instruction = toExec.instruction.cloneType
+    val pc = toExec.pc.cloneType
+    val fwdAddr = toExec.robAddr.cloneType
+  } Lit(_.valid -> false.B))
+
+  toExec.ready := toExecDriver.valid
+  toExec.src1 := toExecDriver.src1
+  toExec.src2 := toExecDriver.src2
+  toExec.writeData := toExecDriver.writedata
+  toExec.instruction := toExecDriver.instruction
+  toExec.pc := toExecDriver.pc
+  toExec.robAddr := toExecDriver.fwdAddr
+
+  // toExec may not fire, eventhough toExec.ready is high
+  /**
+    * toExec.fire may not trigger, eventhough toExec.ready is
+    * high. This may happen due to pipeline stalls. When this
+    * happens we cannot overwrite the existing instruction in
+    * toExecDriver. We buffer this instruction in toExecWaitingBuffer
+    */
+  val toExecWaitingBuffer = RegInit(toExecDriver.cloneType Lit(_.valid -> false.B))
+
+  val fwdRegMap = RegInit(VecInit(Seq.fill(1 << regFileAddrSize)((new Bundle{
+    val valid   = Bool()
+		val addr  = UInt(robAddrWidth.W)
+	}).Lit(
+		_.valid -> false.B
+	))))
+
+  // The writeback data of the retired might be beed to
+  // to be forwarded to decoding instructions
+  val fwdwbDataToDecode = 
+    rdValid(writeBackResult.opcode) && (fwdRegMap(writeBackResult.rdAddr).addr === writeBackResult.robAddr) && fwdRegMap(writeBackResult.rdAddr).valid  
+
+  val toExecDriverNext = Wire(toExecDriver.cloneType)
+  toExecDriverNext := toExecWaitingBuffer
+  when(!toExecWaitingBuffer.valid) {
+    toExecDriverNext.src1.data := registers.rs1
+    toExecDriverNext.src1.fromRob := fwdRegMap(rs1Of(waitingForRead.instruction)).valid
+  }
+
+  val toExecStalled = toExec.ready && !toExec.fired
+  when(toExecStalled) {
+    // Forwarding data from instruction retire interface, these
+    // data will not be available to forwarded after current cycle
+    when(writeBackResult.fired && rdValid(writeBackResult.opcode)) {
+      Seq(toExecDriver.src1, toExecDriver.src2, toExecDriver.writedata)
+      .foreach( src => {
+        when(src.fromRob && (src.robAddr === writeBackResult.robAddr)) {
+          src.fromRob := false.B
+          src.data := writeBackResult.writeBackData
+        }
+      })
+    }
+  }
 
   // Structures from old decode mentioned until core.scala and system.scala can be changed
   val registerFile = Mem(regCount, UInt(dataWidth.W))
