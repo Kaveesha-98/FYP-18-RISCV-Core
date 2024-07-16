@@ -108,9 +108,14 @@ class decode extends Module {
     (instruction(5, 2) === "b1000".U(4.W)) || (instruction(6, 2) === "b01001".U(5.W))
   def rs1FieldPresent(instruction: UInt) = 
     !(
-      Cat(instruction(14), instruction(6, 2)) === "b111100".U(6.W) // || // system instructions without rs1
-
+      (Cat(instruction(14), instruction(6, 2)) === "b111100".U(6.W)) || // system instructions without rs1
+      (Cat(instruction(6), instruction(4, 2)) === "b0101".U(4.W)) || // LUI and AUIPC
+      (instruction(6, 2) === "b11011".U(5.W)) // JAL
+      // ecall and ebreak has rs1 field 00000, hence no need to check
     )
+  def rs2FieldPresent(instruction: UInt) = 
+    ((instruction(6, 5) === "b01".U(2.W)) && (instruction(4, 2) === "b101".U(3.W)) || (instruction(6, 2) === "b11000".U))
+  def writeToMemory(instruction: UInt) = instruction(6, 4) === "b010".U(3.W)
    /**
     * Inputs and Outputs of the module
     */
@@ -186,8 +191,29 @@ class decode extends Module {
   val toExecDriverNext = Wire(toExecDriver.cloneType)
   toExecDriverNext := toExecWaitingBuffer
   when(!toExecWaitingBuffer.valid) {
-    toExecDriverNext.src1.data := registers.rs1
-    toExecDriverNext.src1.fromRob := fwdRegMap(rs1Of(waitingForRead.instruction)).valid
+    // Processing entry in waitingForRead buffer
+    // rs1
+    toExecDriverNext.src1.data := Mux(rs1Of(waitingForRead.instruction).orR, registers.rs1, 0.U(XLEN.W))
+    toExecDriverNext.src1.fromRob := rs1Of(waitingForRead.instruction).orR && fwdRegMap(rs1Of(waitingForRead.instruction)).valid
+    toExecDriverNext.src1.robAddr := fwdRegMap(rs1Of(waitingForRead.instruction)).addr
+    when(!rs1FieldPresent(waitingForRead.instruction)) {
+      toExecDriverNext.src1.fromRob := false.B
+      // we ignore the rs1 field of JAL after issue
+      toExecDriverNext.src1.data := Cat(0.U((XLEN-uimmSize).W), rs1Of(waitingForRead.instruction)) // SYSTEM with uimm field
+      when(!waitingForRead.instruction(6).asBool) { // AUIPC - PC and LUI - 0
+        toExecDriverNext.src1.data := Mux(waitingForRead.instruction(5).asBool, 0.U(64.W), waitingForRead.pc)
+      }
+    }
+
+    // rs2
+    toExecDriverNext.src2.data := Mux(rs2Of(waitingForRead.instruction).orR, registers.rs2, 0.U(XLEN.W))
+    toExecDriverNext.src2.fromRob := rs2Of(waitingForRead.instruction).orR && fwdRegMap(rs2Of(waitingForRead.instruction)).valid
+    toExecDriverNext.src2.robAddr := fwdRegMap(rs2Of(waitingForRead.instruction)).addr
+    when(writeToMemory(waitingForRead.instruction) || !rs2FieldPresent(waitingForRead.instruction)) {
+      toExecDriverNext.src2.fromRob := false.B
+      // toExecDriverNext.src2.data := 
+    }
+
   }
 
   val toExecStalled = toExec.ready && !toExec.fired

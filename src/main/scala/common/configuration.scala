@@ -28,4 +28,5 @@ object coreConfiguration {
     val instructionBase = 0x0000000040000000L
     val XLEN = 64
     val ILEN = 32
+    val uimmSize = 5
 }
