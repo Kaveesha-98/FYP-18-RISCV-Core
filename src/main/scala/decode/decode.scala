@@ -9,6 +9,9 @@ import pipeline.decode.utils._
 /** definition of all ports can be found here */
 import pipeline.configuration.coreConfiguration._
 import pipeline.ports._
+import pipeline.configuration.TypeI
+import pipeline.configuration.TypeR
+import pipeline.configuration.TypeU
 
 class registerfile extends Module {
   val readPortsInRegFile = 2
@@ -104,7 +107,7 @@ class decode extends Module {
   def rs2Of(instruction: UInt) = instruction(24, 20)
   def rdOf(instruction: UInt) = instruction(11, 7)
   // rd note valid for stores and conditional branches
-  def rdValid(instruction: UInt) = 
+  def rdFieldPresent(instruction: UInt) = 
     (instruction(5, 2) === "b1000".U(4.W)) || (instruction(6, 2) === "b01001".U(5.W))
   def rs1FieldPresent(instruction: UInt) = 
     !(
@@ -116,6 +119,7 @@ class decode extends Module {
   def rs2FieldPresent(instruction: UInt) = 
     ((instruction(6, 5) === "b01".U(2.W)) && (instruction(4, 2) === "b101".U(3.W)) || (instruction(6, 2) === "b11000".U))
   def writeToMemory(instruction: UInt) = instruction(6, 4) === "b010".U(3.W)
+  def containUpperImmediate(instruction: UInt) = instruction(4, 2) === "b101".U(3.W)
    /**
     * Inputs and Outputs of the module
     */
@@ -131,10 +135,6 @@ class decode extends Module {
 
   // architectural registers
   val registers = Module(new registerfile)
-
-  // Requesting the data of operand from register file
-  registers.rs1 := rs1Of(fromFetch.instruction)
-  registers.rs2 := rs2Of(fromFetch.instruction)
 
   // registerfile reads takes one cycle.
   /**
@@ -156,7 +156,6 @@ class decode extends Module {
     val writedata = toExec.writeData.cloneType
     val instruction = toExec.instruction.cloneType
     val pc = toExec.pc.cloneType
-    val fwdAddr = toExec.robAddr.cloneType
   } Lit(_.valid -> false.B))
 
   toExec.ready := toExecDriver.valid
@@ -165,7 +164,6 @@ class decode extends Module {
   toExec.writeData := toExecDriver.writedata
   toExec.instruction := toExecDriver.instruction
   toExec.pc := toExecDriver.pc
-  toExec.robAddr := toExecDriver.fwdAddr
 
   // toExec may not fire, eventhough toExec.ready is high
   /**
@@ -182,11 +180,16 @@ class decode extends Module {
 	}).Lit(
 		_.valid -> false.B
 	))))
-
-  // The writeback data of the retired might be beed to
-  // to be forwarded to decoding instructions
-  val fwdwbDataToDecode = 
-    rdValid(writeBackResult.opcode) && (fwdRegMap(writeBackResult.rdAddr).addr === writeBackResult.robAddr) && fwdRegMap(writeBackResult.rdAddr).valid  
+  // update fwdRegMap when an instruction is fired to execution pipeline
+  // entry to update will be received through toExec.robAddr
+  when(toExec.fired && rdOf(toExecDriver.instruction).orR) {
+    fwdRegMap(rdOf(toExecDriver.instruction)).valid := true.B
+    fwdRegMap(rdOf(toExecDriver.instruction)).addr := toExec.robAddr
+  }
+  when(writeBackResult.fired && (fwdRegMap(writeBackResult.rdAddr).addr === writeBackResult.robAddr)) {
+    // This data is now valid in registerfile
+    fwdRegMap(writeBackResult.rdAddr).valid := false.B
+  }
 
   val toExecDriverNext = Wire(toExecDriver.cloneType)
   toExecDriverNext := toExecWaitingBuffer
@@ -211,16 +214,30 @@ class decode extends Module {
     toExecDriverNext.src2.robAddr := fwdRegMap(rs2Of(waitingForRead.instruction)).addr
     when(writeToMemory(waitingForRead.instruction) || !rs2FieldPresent(waitingForRead.instruction)) {
       toExecDriverNext.src2.fromRob := false.B
-      // toExecDriverNext.src2.data := 
+      toExecDriverNext.src2.data := getImmediate(waitingForRead.instruction, TypeI())
+      when(containUpperImmediate(waitingForRead.instruction)) { 
+        toExecDriverNext.src2.data := getImmediate(waitingForRead.instruction, TypeU()) 
+      }
     }
 
+    // write data
+    toExecDriverNext.writedata.data := Mux(rs2Of(waitingForRead.instruction).orR, registers.rs2, 0.U(XLEN.W))
+    toExecDriverNext.writedata.fromRob := rs2Of(waitingForRead.instruction).orR && fwdRegMap(rs2Of(waitingForRead.instruction)).valid
+    toExecDriverNext.writedata.robAddr := fwdRegMap(rs2Of(waitingForRead.instruction)).addr
+    when(!writeToMemory(waitingForRead.instruction)) {
+      toExecDriverNext.writedata.fromRob := false.B
+    }
+
+    toExecDriverNext.instruction := waitingForRead.instruction
+    toExecDriverNext.pc := waitingForRead.pc
   }
 
   val toExecStalled = toExec.ready && !toExec.fired
   when(toExecStalled) {
     // Forwarding data from instruction retire interface, these
     // data will not be available to forwarded after current cycle
-    when(writeBackResult.fired && rdValid(writeBackResult.opcode)) {
+    // in forwardUnit
+    when(writeBackResult.fired && rdFieldPresent(writeBackResult.opcode) && writeBackResult.rdAddr.orR) {
       Seq(toExecDriver.src1, toExecDriver.src2, toExecDriver.writedata)
       .foreach( src => {
         when(src.fromRob && (src.robAddr === writeBackResult.robAddr)) {
@@ -229,7 +246,95 @@ class decode extends Module {
         }
       })
     }
+  }.otherwise {
+    toExecDriver := toExecDriverNext
+    when(writeBackResult.fired && rdFieldPresent(writeBackResult.opcode) && writeBackResult.rdAddr.orR) {
+      Seq(toExecDriver.src1, toExecDriver.src2, toExecDriver.writedata)
+      .zip(Seq(toExecDriverNext.src1, toExecDriverNext.src2, toExecDriverNext.writedata))
+      .foreach{ case(driver, next) => {
+        when(next.fromRob && (next.robAddr === writeBackResult.robAddr)) {
+          driver.fromRob := false.B
+          driver.data := writeBackResult.writeBackData
+        }
+      }}
+    }
+    // Accounting for RAW violations that may occur due to the current
+    // instruction being fired to execution pipeline
+    when(toExecDriver.valid && rdFieldPresent(toExecDriver.instruction) && rdOf(toExecDriver.instruction).orR) {
+      when(rs1FieldPresent(toExecDriverNext.instruction) && (rs1Of(toExecDriverNext.instruction) === rdOf(toExecDriver.instruction))) {
+        toExecDriver.src1.fromRob := true.B
+        toExecDriver.src1.robAddr := toExec.robAddr
+      }
+      when(rs2FieldPresent(toExecDriverNext.instruction) && !writeToMemory(toExecDriver.instruction) 
+      && (rs2Of(toExecDriverNext.instruction) === rdOf(toExecDriver.instruction))) {
+        toExecDriver.src2.fromRob := true.B
+        toExecDriver.src2.robAddr := toExec.robAddr
+      }
+      when(writeToMemory(toExecDriverNext.instruction) && (rs2Of(toExecDriverNext.instruction) === rdOf(toExecDriver.instruction))) {
+        toExecDriver.writedata.fromRob := true.B
+        toExecDriver.writedata.robAddr := toExec.robAddr
+      }
+    }
   }
+
+  when(toExecWaitingBuffer.valid) {
+    when(toExecStalled) {
+      // updating the buffered instruction w.r.t. instructions
+      // being retired from writebackResult
+      when(writeBackResult.fired && rdFieldPresent(writeBackResult.opcode) && writeBackResult.rdAddr.orR) {
+        Seq(toExecWaitingBuffer.src1, toExecWaitingBuffer.src2, toExecWaitingBuffer.writedata)
+        .foreach( src => {
+          when(src.fromRob && (src.robAddr === writeBackResult.robAddr)) {
+            src.fromRob := false.B
+            src.data := writeBackResult.writeBackData
+          }
+        })
+      }
+    }.otherwise {
+      // This buffered entry will be moved to toExecDriver
+      toExecWaitingBuffer.valid := false.B
+    }
+  }.otherwise {
+    toExecWaitingBuffer := toExecDriverNext
+    // Only stored here when toExec is stalled
+    toExecWaitingBuffer.valid := toExecDriverNext.valid && toExecStalled
+    when(writeBackResult.fired && rdFieldPresent(writeBackResult.opcode) && writeBackResult.rdAddr.orR) {
+      Seq(toExecWaitingBuffer.src1, toExecWaitingBuffer.src2, toExecWaitingBuffer.writedata)
+      .zip(Seq(toExecDriverNext.src1, toExecDriverNext.src2, toExecDriverNext.writedata))
+      .foreach{ case(driver, next) => {
+        when(next.fromRob && (next.robAddr === writeBackResult.robAddr)) {
+          driver.fromRob := false.B
+          driver.data := writeBackResult.writeBackData
+        }
+      }}
+    }
+  }
+
+  val readingFrmRegisters = Wire(waitingForRead.cloneType)
+  val bufferedFrmFetch = RegInit(waitingForRead.cloneType Lit(_.valid -> false.B))
+  readingFrmRegisters := bufferedFrmFetch
+  when(fromFetch.fired) {
+    readingFrmRegisters.valid := true.B
+    readingFrmRegisters.instruction := fromFetch.instruction
+    readingFrmRegisters.pc := fromFetch.pc
+  }
+  registers.rs1 := rs1Of(readingFrmRegisters.instruction)
+  registers.rs2 := rs2Of(readingFrmRegisters.instruction)
+
+  waitingForRead := readingFrmRegisters
+  // Register files are not read when there is an execution pipeline stall
+  // unless there are no entries in waitingForRead and toExecWaitingBuffer.
+  // In which case we do one additional read.
+  when(toExecStalled && (waitingForRead.valid || toExecWaitingBuffer.valid)) { 
+    waitingForRead.valid := false.B 
+  }
+
+  when(bufferedFrmFetch.valid) {
+    when(!toExecStalled) { bufferedFrmFetch.valid := false.B }
+  }.otherwise {
+    bufferedFrmFetch.valid := fromFetch.fired && toExecStalled && (waitingForRead.valid || toExecWaitingBuffer.valid)
+  }
+  fromFetch.ready := !bufferedFrmFetch.valid
 
   // Structures from old decode mentioned until core.scala and system.scala can be changed
   val registerFile = Mem(regCount, UInt(dataWidth.W))

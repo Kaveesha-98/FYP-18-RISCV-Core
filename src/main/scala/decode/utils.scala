@@ -85,7 +85,7 @@ object utils {
     insType
   }
 
-  def getImmediate(instruction: UInt, instrucitonType: UInt): UInt = {
+  /* def getImmediate(instruction: UInt, instrucitonType: UInt): UInt = {
     val immediate = WireDefault(0.U(dataWidth.W))
     switch(instrucitonType) {
       is(itype.U) {
@@ -111,6 +111,6 @@ object utils {
       }
     }
     immediate
-  }
+  } */
 
 }

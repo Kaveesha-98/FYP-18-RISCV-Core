@@ -13,6 +13,14 @@ import chisel3.util._
 import chisel3.experimental.BundleLiterals._
 import chisel3.experimental.IO
 
+abstract class instructionEncoding
+case class TypeR() extends instructionEncoding
+case class TypeI() extends instructionEncoding
+case class TypeS() extends instructionEncoding
+case class TypeB() extends instructionEncoding
+case class TypeU() extends instructionEncoding
+case class TypeJ() extends instructionEncoding
+
 object coreConfiguration {
     val robAddrWidth = 3
     val ramBaseAddress = 0x0000000010000000L
@@ -29,4 +37,14 @@ object coreConfiguration {
     val XLEN = 64
     val ILEN = 32
     val uimmSize = 5
+
+    def getImmediate[E <: instructionEncoding](instruction: UInt, encoding : E) = 
+      encoding match {
+        case e: TypeI => Cat(Fill(XLEN-12, instruction(31)), instruction(31, 20))
+        case e: TypeS => Cat(Fill(XLEN-12, instruction(31)), instruction(31, 25), instruction(11, 7))
+        case e: TypeB => Cat(Fill(XLEN-12, instruction(31)), instruction(31), instruction(7), instruction(30, 25), instruction(11, 8), 0.U(1.W))
+        case e: TypeU => Cat(Fill(XLEN-32, instruction(31)), instruction(31, 12), 0.U(12.W))
+        case e: TypeJ => Cat(Fill(XLEN-32, instruction(31)), instruction(31, 12), 0.U(12.W))
+        case e: TypeR => 0.U(XLEN.W) // should not happen
+      }
 }
