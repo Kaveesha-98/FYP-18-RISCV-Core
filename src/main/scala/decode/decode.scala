@@ -120,6 +120,7 @@ class decode extends Module {
     ((instruction(6, 5) === "b01".U(2.W)) && (instruction(4, 2) === "b101".U(3.W)) || (instruction(6, 2) === "b11000".U))
   def writeToMemory(instruction: UInt) = instruction(6, 4) === "b010".U(3.W)
   def containUpperImmediate(instruction: UInt) = instruction(4, 2) === "b101".U(3.W)
+  def isBranch(instruction: UInt) = instruction(6, 4) === "b110".U(3.W)
    /**
     * Inputs and Outputs of the module
     */
@@ -335,6 +336,26 @@ class decode extends Module {
     bufferedFrmFetch.valid := fromFetch.fired && toExecStalled && (waitingForRead.valid || toExecWaitingBuffer.valid)
   }
   fromFetch.ready := !bufferedFrmFetch.valid
+
+  val expectingFrmFetch = RegInit(fromFetch.expected.cloneType Lit(_.valid -> true.B, _.pc -> instructionBase.U))
+  // Unless the accepted instruction from fetch is a branch
+  // we increment expectingFrmFetch by 4 for accepted instruction
+  when(fromFetch.fired) {
+    expectingFrmFetch.pc := expectingFrmFetch.pc + 4.U
+    // after a branch has been accepted, we will then accept the path determined
+    // by fetch unit
+    when(isBranch(fromFetch.instruction)) { expectingFrmFetch.valid := false.B }
+  }
+
+  /**
+    * TODO
+    * 1. Flushing decode unit after misprediction
+    * 2. Updating registerfile instruction retires
+    * 3. Retiring system instructions
+    * 4. Implemention Zicsr
+    * 5. Implementation ecall, mret, ebreak 
+    * 6. Way to ecall illegal instructions
+    */
 
   // Structures from old decode mentioned until core.scala and system.scala can be changed
   val registerFile = Mem(regCount, UInt(dataWidth.W))
