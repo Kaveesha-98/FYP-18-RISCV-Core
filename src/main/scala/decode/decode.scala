@@ -121,6 +121,7 @@ class decode extends Module {
   def writeToMemory(instruction: UInt) = instruction(6, 4) === "b010".U(3.W)
   def containUpperImmediate(instruction: UInt) = instruction(4, 2) === "b101".U(3.W)
   def isBranch(instruction: UInt) = instruction(6, 4) === "b110".U(3.W)
+  def isSystem(instruction: UInt) = instruction(6, 2) === "b11100".U(5.W)
    /**
     * Inputs and Outputs of the module
     */
@@ -133,6 +134,11 @@ class decode extends Module {
   val decodePC = IO(Output(UInt(64.W)))
   val decodeIns = IO(Output(UInt(32.W)))
   val allowInterrupt = IO(Output(Bool()))
+  val branchResolution = IO(Input(new Bundle {
+    val valid = Bool()
+    val failed = Bool()
+    val nextCorrectPC = UInt(XLEN.W)
+  }))
 
   // architectural registers
   val registers = Module(new registerfile)
@@ -338,13 +344,43 @@ class decode extends Module {
   fromFetch.ready := !bufferedFrmFetch.valid
 
   val expectingFrmFetch = RegInit(fromFetch.expected.cloneType Lit(_.valid -> true.B, _.pc -> instructionBase.U))
-  // Unless the accepted instruction from fetch is a branch
+  // Unless the accepted instruction from fetch is a branch,
   // we increment expectingFrmFetch by 4 for accepted instruction
   when(fromFetch.fired) {
     expectingFrmFetch.pc := expectingFrmFetch.pc + 4.U
     // after a branch has been accepted, we will then accept the path determined
-    // by fetch unit
+    // by fetch unit, until a predicted branch is resolved to be mispredicted
     when(isBranch(fromFetch.instruction)) { expectingFrmFetch.valid := false.B }
+  }
+  // Misprediction reported from execution pipeline
+  when(branchResolution.valid && branchResolution.failed) {
+    // Flushing the decode of fetched instructions
+    /**
+      * Although rare, there can be an instance where the fetch
+      * correctly detected the direction, but it was resolved failed
+      * because the predicted next instruction could not be fetched
+      * in time to properly evaluate the prediction by the execution
+      * pipeline.
+      * There can be a performance hit here.
+      */
+    Seq(bufferedFrmFetch.valid, waitingForRead.valid, toExecWaitingBuffer.valid, toExecDriver.valid)
+    .foreach(_ := false.B)
+    expectingFrmFetch.valid := true.B
+    expectingFrmFetch.pc := branchResolution.nextCorrectPC
+  }
+
+  // Stages of handling an instruction with SYSTEM opcode
+  val noSysIns :: sysInDecode :: sysInExec :: Nil = Enum(3)
+  val sysInsStatus = RegInit(noSysIns)
+  switch(sysInsStatus) {
+    is(noSysIns) { when(fromFetch.fired && isSystem(fromFetch.instruction)) { sysInsStatus := sysInDecode }}
+    is(sysInDecode) {
+      // system instruction flushed from decode
+      when(branchResolution.valid && branchResolution.failed) { sysInsStatus := noSysIns }
+      // system instruction pushed to pipeline
+      when(toExec.fired && isSystem(toExec.instruction)) { sysInsStatus := sysInExec }
+    }
+    is(sysInExec) { when(writeBackResult.fired && isSystem(writeBackResult.opcode)) { sysInsStatus := noSysIns }}
   }
 
   /**
