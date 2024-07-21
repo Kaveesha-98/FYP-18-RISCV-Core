@@ -12,6 +12,7 @@ import pipeline.ports._
 import pipeline.configuration.TypeI
 import pipeline.configuration.TypeR
 import pipeline.configuration.TypeU
+import pipeline.configuration.mcauseEncodings
 
 class registerfile extends Module {
   val readPortsInRegFile = 2
@@ -106,6 +107,8 @@ class decode extends Module {
   def rs1Of(instruction: UInt) = instruction(19, 15)
   def rs2Of(instruction: UInt) = instruction(24, 20)
   def rdOf(instruction: UInt) = instruction(11, 7)
+  def funct3Of(instruction: UInt) = instruction(14, 12)
+  def opcode5BitsOf(instruction: UInt) = instruction(6, 2)
   // rd note valid for stores and conditional branches
   def rdFieldPresent(instruction: UInt) = 
     (instruction(5, 2) === "b1000".U(4.W)) || (instruction(6, 2) === "b01001".U(5.W))
@@ -122,6 +125,8 @@ class decode extends Module {
   def containUpperImmediate(instruction: UInt) = instruction(4, 2) === "b101".U(3.W)
   def isBranch(instruction: UInt) = instruction(6, 4) === "b110".U(3.W)
   def isSystem(instruction: UInt) = instruction(6, 2) === "b11100".U(5.W)
+  def isIllegal(instruction: UInt) = false.B
+  def isSystemCall(instruction: UInt) = Cat(funct3Of(instruction), opcode5BitsOf(instruction)) === "b00011100".U(8.W)
    /**
     * Inputs and Outputs of the module
     */
@@ -153,6 +158,7 @@ class decode extends Module {
     val valid = Bool()
     val instruction = fromFetch.instruction.cloneType
     val pc = fromFetch.pc.cloneType
+    val meta = fromFetch.meta.cloneType
   } Lit(_.valid -> false.B)) 
 
   // These drivers will directly drive toExec port
@@ -163,6 +169,7 @@ class decode extends Module {
     val writedata = toExec.writeData.cloneType
     val instruction = toExec.instruction.cloneType
     val pc = toExec.pc.cloneType
+    val meta = toExec.meta.cloneType
   } Lit(_.valid -> false.B))
 
   toExec.ready := toExecDriver.valid
@@ -237,6 +244,7 @@ class decode extends Module {
 
     toExecDriverNext.instruction := waitingForRead.instruction
     toExecDriverNext.pc := waitingForRead.pc
+    toExecDriverNext.meta := waitingForRead.meta
   }
 
   val toExecStalled = toExec.ready && !toExec.fired
@@ -324,11 +332,21 @@ class decode extends Module {
     readingFrmRegisters.valid := true.B
     readingFrmRegisters.instruction := fromFetch.instruction
     readingFrmRegisters.pc := fromFetch.pc
+    readingFrmRegisters.meta := fromFetch.meta
   }
   registers.rs1 := rs1Of(readingFrmRegisters.instruction)
   registers.rs2 := rs2Of(readingFrmRegisters.instruction)
 
   waitingForRead := readingFrmRegisters
+  when(readingFrmRegisters.valid && !readingFrmRegisters.meta.exception) {
+    // No problem had occured during fetching of instruction
+    when(isSystemCall(readingFrmRegisters.instruction) || isIllegal(readingFrmRegisters.instruction)) {
+      waitingForRead.meta.exception := true.B
+      when(isIllegal(readingFrmRegisters.instruction)) {
+        waitingForRead.meta.mcause := mcauseEncodings.IllegalInstruction.U
+      }
+    }
+  }
   // Register files are not read when there is an execution pipeline stall
   // unless there are no entries in waitingForRead and toExecWaitingBuffer.
   // In which case we do one additional read.

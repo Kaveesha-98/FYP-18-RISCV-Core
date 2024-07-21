@@ -48,6 +48,15 @@ class composableInterface extends Bundle {
   val fired = Input(Bool())
 }
 
+class meta extends Bundle {
+  // During the execution of instruction (fetch -> retire) we detected an 
+  // exception in the instruction
+  val exception = Bool()
+  // If there was an exception, the detected agent will record the mcause
+  // of the instruction here
+  val mcause = UInt((log2Ceil(maxExceptionMcause) + 1).W)
+}
+
 /**
   * Rule - pass_instruction_to_decode
   * 
@@ -80,6 +89,7 @@ class issueInstrFrmFetch extends composableInterface {
     val valid = Bool()
     val pc    = UInt(64.W)
   })
+  val meta = Output(new pipeline.ports.meta)
 }
 
 /**
@@ -94,6 +104,7 @@ class recivInstrFrmFetch extends composableInterface {
     val valid = Bool()
     val pc    = UInt(64.W)
   })
+  val meta = Input(new pipeline.ports.meta)
 } 
 
 /**
@@ -168,8 +179,9 @@ class pullCommitFrmRob extends composableInterface {
   val writeBackData = Input(UInt(64.W)) // mtval when exceptionOccured
   //Additional wires when exception handling is added
   val execptionOccured  = Input(Bool())
-  val mcause            = Input(UInt(64.W))
-  val mepc              = Input(UInt(64.W))
+  val mcause            = Input(UInt(64.W)) // place of mcasue field is changed, thus remove this
+  val mepc              = Input(UInt(64.W)) // mepc field will be removed in the future
+  val meta = Input(new pipeline.ports.meta)
 } 
 
 /**
@@ -185,8 +197,9 @@ class commitInstruction extends composableInterface {
   val writeBackData = Output(UInt(64.W)) // mtval when exceptionOccured
   // Additional wires when exception handling is added
   val execptionOccured  = Output(Bool())
-  val mcause            = Output(UInt(64.W))
-  val mepc              = Output(UInt(64.W))
+  val mcause            = Output(UInt(64.W)) // TODO: remove
+  val mepc              = Output(UInt(64.W)) // TODO: remove
+  val meta = Output(new pipeline.ports.meta)
 } 
 /*******************************************************************/
 
@@ -220,6 +233,7 @@ class pushInsToPipeline extends composableInterface {
   val instruction = Output(UInt(32.W))
   val pc          = Output(UInt(64.W))
   val robAddr     = Input(UInt(robAddrWidth.W))   // allocated address in rob
+  val meta = Output(new pipeline.ports.meta)
 }
 
 /**

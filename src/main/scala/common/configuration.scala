@@ -47,4 +47,28 @@ object coreConfiguration {
         case e: TypeJ => Cat(Fill(XLEN-32, instruction(31)), instruction(31, 12), 0.U(12.W))
         case e: TypeR => 0.U(XLEN.W) // should not happen
       }
+    val maxExceptionMcause = 19
+}
+
+object mcauseEncodings {
+  val InstructionAddressMisaligned = 0
+  val InstructionAccessFault = 1
+  val IllegalInstruction = 2
+  val Breakpoint = 3
+  val LoadAddressMisaligned = 4
+  val LoadAccessFault = 5
+  val StoreAMOAddressMisaligned = 6
+  val StoreAMOAccessFault = 7
+  val EnvironmentCallFromUMode = 8
+  val EnvironmentCallFromSMode = 9
+  // 10-Reserved 
+  val EnvironmentCallFromMMode = 11
+  val InstructionPageFault = 12
+  val LoadPageFault = 13
+  // 14-Reserved
+  val StoreAMOPageFault = 15
+  val DoubleTrap = 16
+  // 17-Reserved
+  val SoftwareCheck = 18
+  val HardwareError = 19
 }
