@@ -13,6 +13,7 @@ import pipeline.configuration.TypeI
 import pipeline.configuration.TypeR
 import pipeline.configuration.TypeU
 import pipeline.configuration.mcauseEncodings
+import pipeline.configuration.priviledgeEncodings
 
 class registerfile extends Module {
   val readPortsInRegFile = 2
@@ -114,7 +115,7 @@ class decode extends Module {
     (instruction(5, 2) === "b1000".U(4.W)) || (instruction(6, 2) === "b01001".U(5.W))
   def rs1FieldPresent(instruction: UInt) = 
     !(
-      (Cat(instruction(14), instruction(6, 2)) === "b111100".U(6.W)) || // system instructions without rs1
+      ((instruction(6, 2) === "b11100".U(6.W)) && (funct3Of(instruction).asSInt <= 0.S)) || // system instructions without rs1
       (Cat(instruction(6), instruction(4, 2)) === "b0101".U(4.W)) || // LUI and AUIPC
       (instruction(6, 2) === "b11011".U(5.W)) // JAL
       // ecall and ebreak has rs1 field 00000, hence no need to check
@@ -126,7 +127,7 @@ class decode extends Module {
   def isBranch(instruction: UInt) = instruction(6, 4) === "b110".U(3.W)
   def isSystem(instruction: UInt) = instruction(6, 2) === "b11100".U(5.W)
   def isIllegal(instruction: UInt) = false.B
-  def isSystemCall(instruction: UInt) = Cat(funct3Of(instruction), opcode5BitsOf(instruction)) === "b00011100".U(8.W)
+  def isSystemCall(instruction: UInt) = Cat(rs2Of(instruction), funct3Of(instruction), opcode5BitsOf(instruction)) === "b0001000011100".U(13.W)
    /**
     * Inputs and Outputs of the module
     */
@@ -147,6 +148,7 @@ class decode extends Module {
 
   // architectural registers
   val registers = Module(new registerfile)
+  val currentPriviledge = RegInit(priviledgeEncodings.machine.U(2.W))
 
   // registerfile reads takes one cycle.
   /**
@@ -344,6 +346,8 @@ class decode extends Module {
       waitingForRead.meta.exception := true.B
       when(isIllegal(readingFrmRegisters.instruction)) {
         waitingForRead.meta.mcause := mcauseEncodings.IllegalInstruction.U
+      }.otherwise {
+        waitingForRead.meta.mcause := mcauseEncodings.mcauseForSystemCall(readingFrmRegisters.instruction, currentPriviledge)
       }
     }
   }

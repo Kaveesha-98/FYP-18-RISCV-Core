@@ -71,4 +71,14 @@ object mcauseEncodings {
   // 17-Reserved
   val SoftwareCheck = 18
   val HardwareError = 19
+
+  // for ebreak and ecall
+  def mcauseForSystemCall(instruction: UInt, currentPriviledge: UInt) =
+    Mux(instruction(20).asBool, mcauseEncodings.Breakpoint.U, mcauseEncodings.EnvironmentCallFromUMode.U + currentPriviledge )
+}
+
+object priviledgeEncodings {
+  val machine = 3
+  val supervisor = 1
+  val user = 0
 }
