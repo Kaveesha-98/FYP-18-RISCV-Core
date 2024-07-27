@@ -15,6 +15,12 @@ import pipeline.configuration.TypeU
 import pipeline.configuration.mcauseEncodings
 import pipeline.configuration.priviledgeEncodings
 
+abstract class CSRRegister {
+  // val reg: UInt
+  def read(): UInt
+  def write(wbData: UInt): Unit
+}
+
 class registerfile extends Module {
   val readPortsInRegFile = 2
   val regFileAddrSize = 5
@@ -128,7 +134,8 @@ class decode extends Module {
   def isSystem(instruction: UInt) = instruction(6, 2) === "b11100".U(5.W)
   def isIllegal(instruction: UInt) = false.B
   def isSystemCall(instruction: UInt) = Cat(rs2Of(instruction), funct3Of(instruction), opcode5BitsOf(instruction)) === "b0001000011100".U(13.W)
-   /**
+  def WPRIbits(noOfBits: Int) = 0.U(noOfBits.W)
+  /**
     * Inputs and Outputs of the module
     */
   val fromFetch       = IO(new recivInstrFrmFetch)        /** receives instructions from fetch and communicates the pc of the expected instruction */
@@ -149,6 +156,51 @@ class decode extends Module {
   // architectural registers
   val registers = Module(new registerfile)
   val currentPriviledge = RegInit(priviledgeEncodings.machine.U(2.W))
+  val mstatus = new CSRRegister {
+    // Bits to hold writable bits of mstatus
+    val SD = 0.U(1.W) // FS, VS, and XS are all read-only zero
+    val MDT = 0.U(1.W) // Smdbltrp extension not implemented
+    val MPELP = 0.U(1.W) // Zicfilp extension not implemented
+    val MPV = 0.U(1.W) // hypervisor extension not implemented
+    val GVA = 0.U(1.W) // hypervisor extension not implemented
+    val MBE, SBE, UBE = 0.U(1.W) // Only little-endian access is supported
+    val SXL = 0.U(2.W) // S-mode not implemented
+    val UXL = (log2Ceil(XLEN) - 4).U(2.W) // Fixed XLEN
+    val SDT = 0.U(1.W) // Ssdbltrp extension not implemented
+    val SPELP = 0.U(1.W) // Zicfilp extension not implemented
+    val TSR = 0.U(1.W) // S-mode not supported
+    val TW = 0.U(1.W) // Do not support illegal instruction exception on WFI
+    val TVM = 0.U(1.W) // S-mode not supported
+    val MXR = 0.U(1.W) // S-mode not supported
+    val SUM = 0.U(1.W) // S-mode not supported
+    val MPRV = Reg(UInt(1.W)) // changes necessary when *RET instruction is executed
+    val XS = 0.U(2.W) // User-level interrupts not supported
+    val FS = 0.U(2.W) // Floating point spec not implemented
+    val MPP = Reg(UInt(2.W)) // S-mode not supported
+    val VS = 0.U(2.W) // Vector spec not implemented
+    val SPP = 0.U(1.W) // S-mode not supported
+    val MPIE = Reg(UInt(1.W))
+    val SPIE = 0.U(1.W) // S-mode not supported
+    val MIE = Reg(UInt(1.W))
+    val SIE = 0.U(1.W) // S-mode not supported
+    
+    def read(): UInt = 
+      Cat(
+        SD, WPRIbits(15),
+        WPRIbits(5), MDT, MPELP, WPRIbits(1), MPV, GVA, MBE, SBE, SXL, UXL,
+        WPRIbits(7), SDT, SPELP, TSR, TW, TVM, MXR,SUM, MPRV, XS,
+        FS, MPP, VS, SPP, MPIE, UBE, SPIE, WPRIbits(1), MIE, WPRIbits(1), SIE, WPRIbits(1)
+      )  
+
+    def write(wbData: UInt): Unit = {
+      MPRV := wbData(17)
+      // MPP will not readback unsupported privilege encoding
+      MPP := Mux(Seq(priviledgeEncodings.machine, priviledgeEncodings.user).map(_.U === MPP).reduce(_ || _), wbData(12, 11), MPP)
+      MPIE := wbData(7)
+      MIE := wbData(3)
+    }
+    
+  }
 
   // registerfile reads takes one cycle.
   /**
@@ -404,6 +456,19 @@ class decode extends Module {
     }
     is(sysInExec) { when(writeBackResult.fired && isSystem(writeBackResult.opcode)) { sysInsStatus := noSysIns }}
   }
+  
+  // we wait for decode and execution pipelines to empty
+  // This happens when the pipeline detects an exception and
+  // has to empty newer instructions, to start fetching again
+  val waitingToEmptyPipeline = RegInit(false.B)
+  when(writeBackResult.fired && writeBackResult.meta.exception) {
+    waitingToEmptyPipeline := true.B
+
+    bufferedFrmFetch.valid := false.B
+    waitingForRead.valid := false.B
+    toExecWaitingBuffer.valid := false.B
+    toExecDriver.valid := false.B
+  } 
 
   /**
     * TODO
@@ -417,7 +482,7 @@ class decode extends Module {
 
   // Structures from old decode mentioned until core.scala and system.scala can be changed
   val registerFile = Mem(regCount, UInt(dataWidth.W))
-  val mstatus = Mem(1, UInt(dataWidth.W))
+  // val mstatus = Mem(1, UInt(dataWidth.W))
   val mtvec = Mem(1, UInt(dataWidth.W))
   val csrWriteOut = IO(Output(UInt(64.W)))
 }
