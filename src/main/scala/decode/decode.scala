@@ -14,9 +14,10 @@ import pipeline.configuration.TypeR
 import pipeline.configuration.TypeU
 import pipeline.configuration.mcauseEncodings
 import pipeline.configuration.priviledgeEncodings
+import pipeline.configuration.CSRAddresses
 
 abstract class CSRRegister {
-  // val reg: UInt
+  val address: Int
   def read(): UInt
   def write(wbData: UInt): Unit
 }
@@ -109,7 +110,7 @@ class registerfile extends Module {
   * Details about the IO can be found on common/ports.scala
   *
   */
-class decode extends Module {
+class decode(val hartid:Int = 0) extends Module {
   val regFileAddrSize = 5
   def rs1Of(instruction: UInt) = instruction(19, 15)
   def rs2Of(instruction: UInt) = instruction(24, 20)
@@ -156,7 +157,30 @@ class decode extends Module {
   // architectural registers
   val registers = Module(new registerfile)
   val currentPriviledge = RegInit(priviledgeEncodings.machine.U(2.W))
+
+  val misa = new CSRRegister {
+    val address: Int = CSRAddresses.misa
+    val MXL = (log2Ceil(XLEN) - 4).U(2.W) // Fixed XLEN
+    val extensions = supportedExtensions.map(e => 1 << (e - 'A')).reduce(_ + _).U(26.W)
+
+    def read(): UInt = Cat(MXL, 0.U((XLEN - 28).W), extensions)
+    
+    def write(wbData: UInt): Unit = ()
+    
+  }
+  // mvendorid not implemented
+  // marchid not implemented
+  // mimpid not implemented
+  val mhartid = new CSRRegister {
+    val address: Int = 0xF14
+    
+    def read(): UInt = hartid.U(XLEN.W)
+    
+    def write(wbData: UInt): Unit = ()
+    
+  }
   val mstatus = new CSRRegister {
+    val address: Int = CSRAddresses.mstatus
     // Bits to hold writable bits of mstatus
     val SD = 0.U(1.W) // FS, VS, and XS are all read-only zero
     val MDT = 0.U(1.W) // Smdbltrp extension not implemented
@@ -199,6 +223,28 @@ class decode extends Module {
       MPIE := wbData(7)
       MIE := wbData(3)
     }
+    
+    def ecall() = {
+      MPP := currentPriviledge
+      MPIE := MIE
+      MIE := 0.U
+    }
+
+    def mret() = {
+      when(MPP =/= priviledgeEncodings.machine.U) { MPRV := 0.U }
+      MPP := (if (supportsU) { priviledgeEncodings.user.U } else { priviledgeEncodings.machine.U })
+      MIE := MPIE
+      MPIE := 1.U
+    }
+  }
+  val mtvec = new CSRRegister {
+    val address: Int = CSRAddresses.mtvec
+    val BASE = Reg(UInt((XLEN-2).W))
+    val MODE = 0.U(2.W) // Vectored interrupts are not supported
+    
+    def read(): UInt = Cat(BASE, MODE)
+    
+    def write(wbData: UInt): Unit = { BASE := wbData(XLEN-1, 2) }
     
   }
 
@@ -483,7 +529,7 @@ class decode extends Module {
   // Structures from old decode mentioned until core.scala and system.scala can be changed
   val registerFile = Mem(regCount, UInt(dataWidth.W))
   // val mstatus = Mem(1, UInt(dataWidth.W))
-  val mtvec = Mem(1, UInt(dataWidth.W))
+  // val mtvec = Mem(1, UInt(dataWidth.W))
   val csrWriteOut = IO(Output(UInt(64.W)))
 }
 

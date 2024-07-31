@@ -38,6 +38,9 @@ object coreConfiguration {
     val ILEN = 32
     val uimmSize = 5
 
+    val supportedExtensions = Seq('A', 'I', 'M', 'U')
+    val supportsU = supportedExtensions.contains('U')
+
     def getImmediate[E <: instructionEncoding](instruction: UInt, encoding : E) = 
       encoding match {
         case e: TypeI => Cat(Fill(XLEN-12, instruction(31)), instruction(31, 20))
@@ -81,4 +84,10 @@ object priviledgeEncodings {
   val machine = 3
   val supervisor = 1
   val user = 0
+}
+
+object CSRAddresses {
+  val mstatus = 0x300
+  val misa = 0x301
+  val mtvec = 0x305
 }

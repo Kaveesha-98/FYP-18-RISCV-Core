@@ -37,7 +37,7 @@ class core extends Module {
     }  }
     
     val mtvecOut = IO(Output(UInt(64.W)))
-    mtvecOut := mtvec(0)
+    mtvecOut := mtvec.read()
     //val robEmpty = IO(Input(Bool()))
   } )
 
