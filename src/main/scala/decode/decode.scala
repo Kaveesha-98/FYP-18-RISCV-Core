@@ -131,7 +131,6 @@ class decode(val hartid:Int = 0) extends Module {
     ((instruction(6, 5) === "b01".U(2.W)) && (instruction(4, 2) === "b101".U(3.W)) || (instruction(6, 2) === "b11000".U))
   def writeToMemory(instruction: UInt) = instruction(6, 4) === "b010".U(3.W)
   def containUpperImmediate(instruction: UInt) = instruction(4, 2) === "b101".U(3.W)
-  def isBranch(instruction: UInt) = instruction(6, 4) === "b110".U(3.W)
   def isSystem(instruction: UInt) = instruction(6, 2) === "b11100".U(5.W)
   def isIllegal(instruction: UInt) = false.B
   def isSystemCall(instruction: UInt) = Cat(rs2Of(instruction), funct3Of(instruction), opcode5BitsOf(instruction)) === "b0001000011100".U(13.W)
@@ -515,6 +514,16 @@ class decode(val hartid:Int = 0) extends Module {
     toExecWaitingBuffer.valid := false.B
     toExecDriver.valid := false.B
   } 
+
+  // performing writeback after instruction execution
+  registers.writeback.data := writeBackResult.writeBackData
+  registers.writeback.rd := writeBackResult.rdAddr
+  registers.writeback.valid := false.B
+  when(writeBackResult.fired) {
+    when(rdFieldPresent(writeBackResult.opcode) && writeBackResult.rdAddr.orR) {
+      registers.writeback.valid := true.B
+    }
+  }
 
   /**
     * TODO

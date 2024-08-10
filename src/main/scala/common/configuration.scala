@@ -22,35 +22,39 @@ case class TypeU() extends instructionEncoding
 case class TypeJ() extends instructionEncoding
 
 object coreConfiguration {
-    val robAddrWidth = 3
-    val ramBaseAddress = 0x0000000010000000L
-    val ramHighAddress = 0x000000001fffffffL
-    val iCacheOffsetWidth = 2
-    val iCacheLineWidth = 6
-    val iCacheTagWidth = 32 - iCacheLineWidth - iCacheOffsetWidth - 2
-    val iCacheBlockSize = (1 << iCacheOffsetWidth) // number of instructions
-    val dCacheDoubleWordOffsetWidth = 3
-    val dCacheLineWidth = 6
-    val dCacheTagWidth = 32 - dCacheLineWidth - dCacheDoubleWordOffsetWidth - 3
-    val dCacheBlockSize = (1 << dCacheDoubleWordOffsetWidth)
-    val instructionBase = 0x0000000040000000L
-    val XLEN = 64
-    val ILEN = 32
-    val uimmSize = 5
+  val robAddrWidth = 3
+  val ramBaseAddress = 0x0000000010000000L
+  val ramHighAddress = 0x000000001fffffffL
+  val iCacheOffsetWidth = 2
+  val iCacheLineWidth = 6
+  val iCacheTagWidth = 32 - iCacheLineWidth - iCacheOffsetWidth - 2
+  val iCacheBlockSize = (1 << iCacheOffsetWidth) // number of instructions
+  val dCacheDoubleWordOffsetWidth = 3
+  val dCacheLineWidth = 6
+  val dCacheTagWidth = 32 - dCacheLineWidth - dCacheDoubleWordOffsetWidth - 3
+  val dCacheBlockSize = (1 << dCacheDoubleWordOffsetWidth)
+  val instructionBase = 0x0000000040000000L
+  val XLEN = 64
+  val ILEN = 32
+  val uimmSize = 5
 
-    val supportedExtensions = Seq('A', 'I', 'M', 'U')
-    val supportsU = supportedExtensions.contains('U')
+  val supportedExtensions = Seq('A', 'I', 'M', 'U')
+  val supportsU = supportedExtensions.contains('U')
 
-    def getImmediate[E <: instructionEncoding](instruction: UInt, encoding : E) = 
-      encoding match {
-        case e: TypeI => Cat(Fill(XLEN-12, instruction(31)), instruction(31, 20))
-        case e: TypeS => Cat(Fill(XLEN-12, instruction(31)), instruction(31, 25), instruction(11, 7))
-        case e: TypeB => Cat(Fill(XLEN-12, instruction(31)), instruction(31), instruction(7), instruction(30, 25), instruction(11, 8), 0.U(1.W))
-        case e: TypeU => Cat(Fill(XLEN-32, instruction(31)), instruction(31, 12), 0.U(12.W))
-        case e: TypeJ => Cat(Fill(XLEN-32, instruction(31)), instruction(31, 12), 0.U(12.W))
-        case e: TypeR => 0.U(XLEN.W) // should not happen
-      }
-    val maxExceptionMcause = 19
+  def getImmediate[E <: instructionEncoding](instruction: UInt, encoding : E) = 
+    encoding match {
+      case e: TypeI => Cat(Fill(XLEN-12, instruction(31)), instruction(31, 20))
+      case e: TypeS => Cat(Fill(XLEN-12, instruction(31)), instruction(31, 25), instruction(11, 7))
+      case e: TypeB => Cat(Fill(XLEN-12, instruction(31)), instruction(31), instruction(7), instruction(30, 25), instruction(11, 8), 0.U(1.W))
+      case e: TypeU => Cat(Fill(XLEN-32, instruction(31)), instruction(31, 12), 0.U(12.W))
+      case e: TypeJ => Cat(Fill(XLEN-32, instruction(31)), instruction(31, 12), 0.U(12.W))
+      case e: TypeR => 0.U(XLEN.W) // should not happen
+    }
+  val maxExceptionMcause = 19
+
+
+  def isBranch(instruction: UInt) = instruction(6, 4) === "b110".U(3.W)
+  def isMExtenMul(instruction: UInt) = (instruction(6, 2) === BitPat("b011?0")) && instruction(25).asBool
 }
 
 object mcauseEncodings {

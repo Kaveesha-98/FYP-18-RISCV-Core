@@ -48,6 +48,55 @@ class composableInterface extends Bundle {
   val fired = Input(Bool())
 }
 
+class ComposableIO[+T <: Data](gen: T) extends Bundle {
+  /** A bit that will be asserted when `bits` is ready
+    * @group Signals
+    */
+  val ready = Output(Bool())
+
+  /** A bit that will be asserted when `bits` is fired
+    * @group Signals
+    */
+  val fired = Input(Bool())
+
+  /** The data to be transferred, qualified by `valid`
+    * @group Signals
+    */
+  val bits = gen
+}
+
+object ComposableIO {
+
+  /** Wrap some [[Data]] in a valid interface
+    * @tparam T the type of the data to wrap
+    * @param gen the data to wrap
+    * @return the wrapped input data
+    */
+  def apply[T <: Data](gen: T): ComposableIO[T] = new ComposableIO(gen)
+}
+
+class validBundle[+T <: Data](gen: T) extends Bundle {
+  /** A bit that will be asserted when `bits` is valid
+    * @group Signals
+    */
+  val valid = Bool()
+
+  /** The data to be transferred, qualified by `valid`
+    * @group Signals
+    */
+  val bits = gen
+}
+
+object validBundle {
+
+  /** Wrap some [[Data]] in a valid interface
+    * @tparam T the type of the data to wrap
+    * @param gen the data to wrap
+    * @return the wrapped input data
+    */
+  def apply[T <: Data](gen: T): validBundle[T] = new validBundle(gen)
+}
+
 class meta extends Bundle {
   // During the execution of instruction (fetch -> retire) we detected an 
   // exception in the instruction

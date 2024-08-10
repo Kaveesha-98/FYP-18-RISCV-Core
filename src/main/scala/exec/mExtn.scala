@@ -20,6 +20,8 @@ abstract class mExtn extends Module {
 
   // checks for 14th bit returns whether it can be serviced by the module
   def turnOn(x: UInt): Bool
+
+  def getmOp(x: UInt) = Cat(x(3), x(14, 12))
 }
 
 class multiplier extends mExtn {
