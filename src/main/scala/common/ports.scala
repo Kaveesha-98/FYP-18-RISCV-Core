@@ -249,6 +249,7 @@ class commitInstruction extends composableInterface {
   val mcause            = Output(UInt(64.W)) // TODO: remove
   val mepc              = Output(UInt(64.W)) // TODO: remove
   val meta = Output(new pipeline.ports.meta)
+  val fwdAddr = Input(UInt(fwdAddrWidth.W))
 } 
 /*******************************************************************/
 

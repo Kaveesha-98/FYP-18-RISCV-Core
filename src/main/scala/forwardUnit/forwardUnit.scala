@@ -45,25 +45,28 @@ class forwardUnit extends Module {
   val fromExec = IO(new pullExecResultToRob)
 
   // Dedicated port to take results of transient
-  // instruction for non memory access instrunctions
+  // instruction for memory access instrunctions
   val fromMem = IO(new pullMemResultToRob)
 
   // When an instruction retires to decode, we have 
   // to free up an entry in resultsBuffer
   // 'commitInstruction' has to be renamed
+  // we are just reusing the interface name
   val freeEntry = IO(new commitInstruction)
 
   // logic starts here
-  val resultsBuffer = RegInit(VecInit(Seq.fill(1 << robAddrWidth)((new Bundle{
+  val resultsBuffer = RegInit(VecInit(Seq.fill(1 << fwdAddrWidth)((new Bundle{
     val valid   = Bool()
-		val result  = UInt(XLEN.W)
-	}).Lit(
-		_.valid -> true.B
-	))))
+    val result  = UInt(XLEN.W)
+  }).Lit(
+    _.valid -> true.B
+  ))))
   
   // There are two write ports to resultsBuffer
   // Hence, the two write ports are always ready
   // (resource utilization is neglegible)
+  // We will most likely won't be using the fromMem
+  // interface anyway (lets see)
   fromExec.ready := true.B
   fromMem.ready := true.B
 
@@ -71,21 +74,19 @@ class forwardUnit extends Module {
   // always be ready (resource utilization is neglegible)
   freeEntry.ready := true.B
 
-  // allocAddr will be assigned to the next instruction issued
-  // from decode
-  val allocAddr = RegInit(0.U(robAddrWidth.W))
-  // This address will be freed when an instruction is retired 
-  // to decode
-  val freeAddr = RegInit(0.U(robAddrWidth.W))
-  // Indicate to decode that entries can be allocated
-  val canAllocate = RegInit(true.B)
-  when(canAllocate && fromDecode.fired && !freeEntry.fired) {
-    when((allocAddr +& 1.U) === freeAddr) { canAllocate := false.B }
-  }.elsewhen(!canAllocate) {
-    when(freeEntry.fired) { canAllocate := true.B }
+  val buffersAllocated = RegInit(VecInit.fill(1 << fwdAddrWidth)(false.B))
+  when (fromDecode.fired) { 
+    buffersAllocated(fromDecode.robAddr) := true.B
+    resultsBuffer(fromDecode.robAddr).valid := false.B // Making sure stale data is not forwarded
   }
-  fromDecode.ready := canAllocate
-  fromDecode.robAddr := allocAddr // TODO: 'robAddr' needs to renamed everywhere
+  when (freeEntry.fired) { 
+    // freeing the buffer for a new instruction
+    buffersAllocated(freeEntry.fwdAddr) := false.B 
+  }
+  fromDecode.ready := !buffersAllocated.reduce(_ && _) // are all buffers allocated?
+  // TODO: 'robAddr' needs to renamed everywhere
+  // highest index with free buffer has highest priority
+  fromDecode.robAddr := (0 until (1 << fwdAddrWidth)).foldLeft(0.U) { case(prev_index, curr_index) => Mux(buffersAllocated(curr_index), prev_index, curr_index.U)}
   
   // Forwarding data to exec
   fromDecode.fwdrs1.value := resultsBuffer(fromDecode.fwdrs1.robAddr).result
@@ -102,10 +103,6 @@ class forwardUnit extends Module {
     resultsBuffer(fromMem.robAddr).result := fromMem.writeBackData
     resultsBuffer(fromMem.robAddr).valid := true.B
   }
-
-  // incrementing the pointers
-  allocAddr := allocAddr +& fromDecode.fired.asUInt
-  freeAddr := freeAddr +& freeEntry.fired.asUInt
 
   // Hardwiring outputs that are soon to be removed
   carryOutFence.ready := false.B

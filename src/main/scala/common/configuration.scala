@@ -23,6 +23,7 @@ case class TypeJ() extends instructionEncoding
 
 object coreConfiguration {
   val robAddrWidth = 3
+  val fwdAddrWidth = robAddrWidth
   val ramBaseAddress = 0x0000000010000000L
   val ramHighAddress = 0x000000001fffffffL
   val iCacheOffsetWidth = 2
