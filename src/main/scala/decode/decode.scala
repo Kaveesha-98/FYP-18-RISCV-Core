@@ -15,6 +15,7 @@ import pipeline.configuration.TypeU
 import pipeline.configuration.mcauseEncodings
 import pipeline.configuration.priviledgeEncodings
 import pipeline.configuration.CSRAddresses
+import pipeline.decode.constants.opcode5MSBs.jal
 
 abstract class CSRRegister {
   val address: Int
@@ -134,6 +135,7 @@ class decode(val hartid:Int = 0) extends Module {
   def isSystem(instruction: UInt) = instruction(6, 2) === "b11100".U(5.W)
   def isIllegal(instruction: UInt) = false.B
   def isSystemCall(instruction: UInt) = Cat(rs2Of(instruction), funct3Of(instruction), opcode5BitsOf(instruction)) === "b0001000011100".U(13.W)
+  def isJAL(instruction: UInt) = instruction(6,2) === "b11011".U(5.W)
   def WPRIbits(noOfBits: Int) = 0.U(noOfBits.W)
   /**
     * Inputs and Outputs of the module
@@ -157,389 +159,344 @@ class decode(val hartid:Int = 0) extends Module {
   val registers = Module(new registerfile)
   val currentPriviledge = RegInit(priviledgeEncodings.machine.U(2.W))
 
-  val misa = new CSRRegister {
-    val address: Int = CSRAddresses.misa
-    val MXL = (log2Ceil(XLEN) - 4).U(2.W) // Fixed XLEN
-    val extensions = supportedExtensions.map(e => 1 << (e - 'A')).reduce(_ + _).U(26.W)
-
-    def read(): UInt = Cat(MXL, 0.U((XLEN - 28).W), extensions)
-    
-    def write(wbData: UInt): Unit = ()
-    
-  }
-  // mvendorid not implemented
-  // marchid not implemented
-  // mimpid not implemented
-  val mhartid = new CSRRegister {
-    val address: Int = 0xF14
-    
-    def read(): UInt = hartid.U(XLEN.W)
-    
-    def write(wbData: UInt): Unit = ()
-    
-  }
-  val mstatus = new CSRRegister {
-    val address: Int = CSRAddresses.mstatus
-    // Bits to hold writable bits of mstatus
-    val SD = 0.U(1.W) // FS, VS, and XS are all read-only zero
-    val MDT = 0.U(1.W) // Smdbltrp extension not implemented
-    val MPELP = 0.U(1.W) // Zicfilp extension not implemented
-    val MPV = 0.U(1.W) // hypervisor extension not implemented
-    val GVA = 0.U(1.W) // hypervisor extension not implemented
-    val MBE, SBE, UBE = 0.U(1.W) // Only little-endian access is supported
-    val SXL = 0.U(2.W) // S-mode not implemented
-    val UXL = (log2Ceil(XLEN) - 4).U(2.W) // Fixed XLEN
-    val SDT = 0.U(1.W) // Ssdbltrp extension not implemented
-    val SPELP = 0.U(1.W) // Zicfilp extension not implemented
-    val TSR = 0.U(1.W) // S-mode not supported
-    val TW = 0.U(1.W) // Do not support illegal instruction exception on WFI
-    val TVM = 0.U(1.W) // S-mode not supported
-    val MXR = 0.U(1.W) // S-mode not supported
-    val SUM = 0.U(1.W) // S-mode not supported
-    val MPRV = Reg(UInt(1.W)) // changes necessary when *RET instruction is executed
-    val XS = 0.U(2.W) // User-level interrupts not supported
-    val FS = 0.U(2.W) // Floating point spec not implemented
-    val MPP = Reg(UInt(2.W)) // S-mode not supported
-    val VS = 0.U(2.W) // Vector spec not implemented
-    val SPP = 0.U(1.W) // S-mode not supported
-    val MPIE = Reg(UInt(1.W))
-    val SPIE = 0.U(1.W) // S-mode not supported
-    val MIE = Reg(UInt(1.W))
-    val SIE = 0.U(1.W) // S-mode not supported
-    
-    def read(): UInt = 
-      Cat(
-        SD, WPRIbits(15),
-        WPRIbits(5), MDT, MPELP, WPRIbits(1), MPV, GVA, MBE, SBE, SXL, UXL,
-        WPRIbits(7), SDT, SPELP, TSR, TW, TVM, MXR,SUM, MPRV, XS,
-        FS, MPP, VS, SPP, MPIE, UBE, SPIE, WPRIbits(1), MIE, WPRIbits(1), SIE, WPRIbits(1)
-      )  
-
-    def write(wbData: UInt): Unit = {
-      MPRV := wbData(17)
-      // MPP will not readback unsupported privilege encoding
-      MPP := Mux(Seq(priviledgeEncodings.machine, priviledgeEncodings.user).map(_.U === MPP).reduce(_ || _), wbData(12, 11), MPP)
-      MPIE := wbData(7)
-      MIE := wbData(3)
-    }
-    
-    def ecall() = {
-      MPP := currentPriviledge
-      MPIE := MIE
-      MIE := 0.U
-    }
-
-    def mret() = {
-      when(MPP =/= priviledgeEncodings.machine.U) { MPRV := 0.U }
-      MPP := (if (supportsU) { priviledgeEncodings.user.U } else { priviledgeEncodings.machine.U })
-      MIE := MPIE
-      MPIE := 1.U
-    }
-  }
-  val mtvec = new CSRRegister {
-    val address: Int = CSRAddresses.mtvec
-    val BASE = Reg(UInt((XLEN-2).W))
-    val MODE = 0.U(2.W) // Vectored interrupts are not supported
-    
-    def read(): UInt = Cat(BASE, MODE)
-    
-    def write(wbData: UInt): Unit = { BASE := wbData(XLEN-1, 2) }
-    
-  }
-
-  // registerfile reads takes one cycle.
-  /**
-    * Once the rs* fields are given to read from registerfile,
-    * it is buffered in waitingForRead for one cycle. After one
-    * cycle it is sent to toExecDriver to be presented to toExec
-    */
-  val waitingForRead = RegInit(new Bundle {
+  // Once a register read is requested, all instructions are moved
+  // here. If registerfile.readPort is blocked (waitOntoExecBuffer.valid in next cycle),
+  // then new instruction is sent to stalledInstructionfromFetch. 
+  // If we have a branch misprediction, then we flush the new instruction
+  // fired from fromFetch instead.
+  // All instructions can only occupy this buffer only for one cycle
+  // There are 3 destinations (mutually exclusive) for an instruction occupying this buffer
+  //  1. toExecBuffer: when(!toExecBuffer.valid || toExec.fired)
+  //  2. waitOntoExecBuffer
+  //  3. flushed due to branch mis-prediction
+  // There are 2 sources for this 
+  //  1. fromFetch: registerfile.readPort is not blocked
+  //  2. stalledInstructionfromFetch: (registerfile.readPort is not blocked) and stalledInstructionfromFetch.valid
+  val waitOnReadBuffer = RegInit(new Bundle {
     val valid = Bool()
-    val instruction = fromFetch.instruction.cloneType
-    val pc = fromFetch.pc.cloneType
-    val meta = fromFetch.meta.cloneType
-  } Lit(_.valid -> false.B)) 
-
-  // These drivers will directly drive toExec port
-  val toExecDriver = RegInit(new Bundle {
-    val valid = Bool()
-    val src1 = toExec.src1.cloneType
-    val src2 = toExec.src1.cloneType
-    val writedata = toExec.writeData.cloneType
-    val instruction = toExec.instruction.cloneType
-    val pc = toExec.pc.cloneType
-    val meta = toExec.meta.cloneType
+    val pc = UInt(XLEN.W)
+    val instruction = UInt(ILEN.W)
+    val meta = new pipeline.ports.meta
   } Lit(_.valid -> false.B))
 
-  toExec.ready := toExecDriver.valid
-  toExec.src1 := toExecDriver.src1
-  toExec.src2 := toExecDriver.src2
-  toExec.writeData := toExecDriver.writedata
-  toExec.instruction := toExecDriver.instruction
-  toExec.pc := toExecDriver.pc
+  // This is to handle stalls when a toExec stalls and results in no space for 
+  // register file reads for the instruction currently fired instruction. This
+  // instruction will occupy this buffer until there is space for registerfile
+  // reads.
+  // When this is occupyied no new instructions are accepted fromFetch.
+  // waitOnReadBuffer is the next destination for any instruction occupying this
+  // buffer.
+  // fromFetch is the only source for this buffer. When waitOntoExecBuffer.valid
+  // is true in next cycle.
+  val stalledInstructionfromFetch = RegInit(waitOnReadBuffer.cloneType.Lit(_.valid -> false.B))
 
-  // toExec may not fire, eventhough toExec.ready is high
-  /**
-    * toExec.fire may not trigger, eventhough toExec.ready is
-    * high. This may happen due to pipeline stalls. When this
-    * happens we cannot overwrite the existing instruction in
-    * toExecDriver. We buffer this instruction in toExecWaitingBuffer
-    */
-  val toExecWaitingBuffer = RegInit(toExecDriver.cloneType Lit(_.valid -> false.B))
+  // stall fromFetch when stalledInstructionfromFetch is occupied
+  fromFetch.ready := !stalledInstructionfromFetch.valid
 
-  val fwdRegMap = RegInit(VecInit(Seq.fill(1 << regFileAddrSize)((new Bundle{
-    val valid   = Bool()
-		val addr  = UInt(robAddrWidth.W)
-	}).Lit(
-		_.valid -> false.B
-	))))
-  // update fwdRegMap when an instruction is fired to execution pipeline
-  // entry to update will be received through toExec.robAddr
-  when(toExec.fired && rdOf(toExecDriver.instruction).orR) {
-    fwdRegMap(rdOf(toExecDriver.instruction)).valid := true.B
-    fwdRegMap(rdOf(toExecDriver.instruction)).addr := toExec.robAddr
-  }
-  when(writeBackResult.fired && (fwdRegMap(writeBackResult.rdAddr).addr === writeBackResult.robAddr)) {
-    // This data is now valid in registerfile
-    fwdRegMap(writeBackResult.rdAddr).valid := false.B
-  }
+  // requesting architectural register read for each new instruction.
+  // This requirces one cycle. The instruction is sent to waitOnReadBuffer
+  // so that we can pipeline the read.
+  // When there is a stalled instruction that didn't finish its read, it gets
+  // priority, however fromFetch.fired show assert at this moment
+  registers.rs1(rs1Of(Mux(stalledInstructionfromFetch.valid, stalledInstructionfromFetch.instruction, fromFetch.instruction)))
+  registers.rs2(rs2Of(Mux(stalledInstructionfromFetch.valid, stalledInstructionfromFetch.instruction, fromFetch.instruction)))
 
-  val toExecDriverNext = Wire(toExecDriver.cloneType)
-  toExecDriverNext := toExecWaitingBuffer
-  when(!toExecWaitingBuffer.valid) {
-    // Processing entry in waitingForRead buffer
-    // rs1
-    toExecDriverNext.src1.data := Mux(rs1Of(waitingForRead.instruction).orR, registers.rs1, 0.U(XLEN.W))
-    toExecDriverNext.src1.fromRob := rs1Of(waitingForRead.instruction).orR && fwdRegMap(rs1Of(waitingForRead.instruction)).valid
-    toExecDriverNext.src1.robAddr := fwdRegMap(rs1Of(waitingForRead.instruction)).addr
-    when(!rs1FieldPresent(waitingForRead.instruction)) {
-      toExecDriverNext.src1.fromRob := false.B
-      // we ignore the rs1 field of JAL after issue
-      toExecDriverNext.src1.data := Cat(0.U((XLEN-uimmSize).W), rs1Of(waitingForRead.instruction)) // SYSTEM with uimm field
-      when(!waitingForRead.instruction(6).asBool) { // AUIPC - PC and LUI - 0
-        toExecDriverNext.src1.data := Mux(waitingForRead.instruction(5).asBool, 0.U(64.W), waitingForRead.pc)
-      }
-    }
+  // This is to handle the case where when toExec is stalled (i.e. toExec.ready && !toExec.fired)
+  // and the results from register read of instruction in waitOnReadBuffer requires to be stored
+  // somewhere. The results will be stored here.
+  // Only one destination for instructions stored here, which is, toExecBuffer, when (toExec.fired)
+  // IMPORTANT waitOntoExecBuffer.valid => toExecBuffer.valid
+  // Only one source, which is, waitOnReadBuffer, when toExec is stalled (ie toExec.ready && !toExec.fired)
+  val waitOntoExecBuffer = RegInit(new Bundle {
+    val valid = Bool()
+    // IMPORTANT - value of x0 should never be issued with *.fromRob asserted
+    val src1        = (new Bundle {
+      val fromFwd = Bool()
+      val data = UInt(XLEN.W)
+      val fwdAddr = UInt(fwdAddrWidth.W)  
+    })               // {jal, jalr, auipc - pc}, {loads, stores, rops*, iops*, conditionalBranches - rs1}
+    val src2        = (src1.cloneType)        // {jalr, jal - 4.U}, {loads, stores, iops*, auipc - immediate}, {rops* - rs2}
+    val writeData   = (src1.cloneType)
+    val instruction = (UInt(ILEN.W))
+    val pc          = (UInt(XLEN.W))
+    val meta = (new pipeline.ports.meta)
+  } Lit(_.valid -> false.B))
 
-    // rs2
-    toExecDriverNext.src2.data := Mux(rs2Of(waitingForRead.instruction).orR, registers.rs2, 0.U(XLEN.W))
-    toExecDriverNext.src2.fromRob := rs2Of(waitingForRead.instruction).orR && fwdRegMap(rs2Of(waitingForRead.instruction)).valid
-    toExecDriverNext.src2.robAddr := fwdRegMap(rs2Of(waitingForRead.instruction)).addr
-    when(writeToMemory(waitingForRead.instruction) || !rs2FieldPresent(waitingForRead.instruction)) {
-      toExecDriverNext.src2.fromRob := false.B
-      toExecDriverNext.src2.data := getImmediate(waitingForRead.instruction, TypeI())
-      when(containUpperImmediate(waitingForRead.instruction)) { 
-        toExecDriverNext.src2.data := getImmediate(waitingForRead.instruction, TypeU()) 
-      }
-    }
-
-    // write data
-    toExecDriverNext.writedata.data := Mux(rs2Of(waitingForRead.instruction).orR, registers.rs2, 0.U(XLEN.W))
-    toExecDriverNext.writedata.fromRob := rs2Of(waitingForRead.instruction).orR && fwdRegMap(rs2Of(waitingForRead.instruction)).valid
-    toExecDriverNext.writedata.robAddr := fwdRegMap(rs2Of(waitingForRead.instruction)).addr
-    when(!writeToMemory(waitingForRead.instruction)) {
-      toExecDriverNext.writedata.fromRob := false.B
-    }
-
-    toExecDriverNext.instruction := waitingForRead.instruction
-    toExecDriverNext.pc := waitingForRead.pc
-    toExecDriverNext.meta := waitingForRead.meta
-  }
-
-  val toExecStalled = toExec.ready && !toExec.fired
-  when(toExecStalled) {
-    // Forwarding data from instruction retire interface, these
-    // data will not be available to forwarded after current cycle
-    // in forwardUnit
-    when(writeBackResult.fired && rdFieldPresent(writeBackResult.opcode) && writeBackResult.rdAddr.orR) {
-      Seq(toExecDriver.src1, toExecDriver.src2, toExecDriver.writedata)
-      .foreach( src => {
-        when(src.fromRob && (src.robAddr === writeBackResult.robAddr)) {
-          src.fromRob := false.B
-          src.data := writeBackResult.writeBackData
-        }
-      })
+  val registerReadsBlockedFromNextCycle = toExec.ready && !toExec.fired && waitOnReadBuffer.valid // => waitOntoExecBuffer.valid on next cycle
+  val registerReadsNowBlocked = waitOntoExecBuffer.valid
+  // CAUTION: We assume branch resolutions almost always happens with the next predicted instruction
+  // If we are wrong, then we have a performance loss
+  val flushingInstructions = branchResolution.valid && branchResolution.failed
+  
+  // Writing to stalledInstructionfromFetch, all conditions should be mutually exclusive
+  when (!stalledInstructionfromFetch.valid && !flushingInstructions) {
+    // Writes only happen when this buffer is empty
+    when (registerReadsBlockedFromNextCycle || registerReadsNowBlocked) {
+      // Only from fromFetch
+      stalledInstructionfromFetch.instruction := fromFetch.instruction
+      stalledInstructionfromFetch.meta := fromFetch.meta
+      stalledInstructionfromFetch.pc := fromFetch.pc
+      stalledInstructionfromFetch.valid := fromFetch.fired
     }
   }.otherwise {
-    toExecDriver := toExecDriverNext
-    when(writeBackResult.fired && rdFieldPresent(writeBackResult.opcode) && writeBackResult.rdAddr.orR) {
-      Seq(toExecDriver.src1, toExecDriver.src2, toExecDriver.writedata)
-      .zip(Seq(toExecDriverNext.src1, toExecDriverNext.src2, toExecDriverNext.writedata))
-      .foreach{ case(driver, next) => {
-        when(next.fromRob && (next.robAddr === writeBackResult.robAddr)) {
-          driver.fromRob := false.B
-          driver.data := writeBackResult.writeBackData
-        }
-      }}
-    }
-    // Accounting for RAW violations that may occur due to the current
-    // instruction being fired to execution pipeline
-    when(toExecDriver.valid && rdFieldPresent(toExecDriver.instruction) && rdOf(toExecDriver.instruction).orR) {
-      when(rs1FieldPresent(toExecDriverNext.instruction) && (rs1Of(toExecDriverNext.instruction) === rdOf(toExecDriver.instruction))) {
-        toExecDriver.src1.fromRob := true.B
-        toExecDriver.src1.robAddr := toExec.robAddr
-      }
-      when(rs2FieldPresent(toExecDriverNext.instruction) && !writeToMemory(toExecDriver.instruction) 
-      && (rs2Of(toExecDriverNext.instruction) === rdOf(toExecDriver.instruction))) {
-        toExecDriver.src2.fromRob := true.B
-        toExecDriver.src2.robAddr := toExec.robAddr
-      }
-      when(writeToMemory(toExecDriverNext.instruction) && (rs2Of(toExecDriverNext.instruction) === rdOf(toExecDriver.instruction))) {
-        toExecDriver.writedata.fromRob := true.B
-        toExecDriver.writedata.robAddr := toExec.robAddr
-      }
+    // freeing the buffer
+    when (!registerReadsNowBlocked || flushingInstructions) {
+      stalledInstructionfromFetch.valid := false.B
     }
   }
 
-  when(toExecWaitingBuffer.valid) {
-    when(toExecStalled) {
-      // updating the buffered instruction w.r.t. instructions
-      // being retired from writebackResult
-      when(writeBackResult.fired && rdFieldPresent(writeBackResult.opcode) && writeBackResult.rdAddr.orR) {
-        Seq(toExecWaitingBuffer.src1, toExecWaitingBuffer.src2, toExecWaitingBuffer.writedata)
-        .foreach( src => {
-          when(src.fromRob && (src.robAddr === writeBackResult.robAddr)) {
-            src.fromRob := false.B
-            src.data := writeBackResult.writeBackData
+  // Writing to waitOnReadBuffer
+  when ((!(registerReadsBlockedFromNextCycle || registerReadsNowBlocked)) && !flushingInstructions) {
+    // all these conditions should be mutually exclusive
+    when (fromFetch.fired) {
+      waitOnReadBuffer.instruction := fromFetch.instruction
+      waitOnReadBuffer.meta := fromFetch.meta
+      waitOnReadBuffer.pc := fromFetch.pc
+      waitOnReadBuffer.valid := true.B
+    }.elsewhen (stalledInstructionfromFetch.valid) {
+      waitOnReadBuffer.instruction := stalledInstructionfromFetch.instruction
+      waitOnReadBuffer.meta := stalledInstructionfromFetch.meta
+      waitOnReadBuffer.pc := stalledInstructionfromFetch.pc
+      waitOnReadBuffer.valid := true.B
+    }.otherwise {
+      waitOnReadBuffer.valid := false.B
+    }
+  }.otherwise {
+    // instruction flushes and stalls
+    waitOnReadBuffer.valid := false.B
+  }
+
+  // We have two sources
+  //  1. registerfile: default
+  //  2. registers.writeback (writeback data for retiring instruction)
+  //      This is the most updated data for the corresponding source from the retired instructions.
+  //      This data has to be forwarded when needed
+  def getRegisterValue(srcAddr: UInt, registerfileOutput: UInt) = 
+    Mux(registers.writeback.valid && (registers.writeback.rd === srcAddr), registers.writeback.data, registerfileOutput)
+
+  def readCSR(instruction: UInt) = 0.U
+
+  val registerHasFwdAddr = RegInit(VecInit.fill(1 << regFileAddrSize)(false.B))
+  val fwdAddrOfRegisters = RegInit(VecInit.fill(1 << regFileAddrSize)(0.U(fwdAddrWidth.W)))
+
+  val registerReadResults = Wire(waitOntoExecBuffer.cloneType)
+  registerReadResults.valid := waitOnReadBuffer.valid
+  registerReadResults.instruction := waitOnReadBuffer.instruction
+  registerReadResults.meta := waitOnReadBuffer.meta
+  registerReadResults.pc := waitOnReadBuffer.pc
+  when (rs1FieldPresent(waitOnReadBuffer.instruction)) {
+    registerReadResults.src1.data := getRegisterValue(rs1Of(waitOnReadBuffer.instruction), registers.rs1ReadData)
+  }. otherwise {
+    registerReadResults.src1.data := 0.U // default
+    switch (opcode5BitsOf(waitOnReadBuffer.instruction)) {
+      is (opcode5MSBs.auipc.U(5.W)) { registerReadResults.src1.data := waitOnReadBuffer.pc }
+      is (opcode5MSBs.system.U(5.W)) { registerReadResults.src1.data := getImmediateUimm(waitOnReadBuffer.instruction) }
+    }
+  }
+  when (rs2FieldPresent(waitOnReadBuffer.instruction) && !writeToMemory(waitOnReadBuffer.instruction)) {
+    registerReadResults.src2.data := getRegisterValue(rs2Of(waitOnReadBuffer.instruction), registers.rs2ReadData)
+  }.otherwise {
+    registerReadResults.src2.data := Seq(
+      (isTypeI(waitOnReadBuffer.instruction), getImmediateTypeI(waitOnReadBuffer.instruction)),
+      (isTypeS(waitOnReadBuffer.instruction), getImmediateTypeS(waitOnReadBuffer.instruction)),
+      (isTypeB(waitOnReadBuffer.instruction), getImmediateTypeB(waitOnReadBuffer.instruction)),
+      (isTypeU(waitOnReadBuffer.instruction), getImmediateTypeU(waitOnReadBuffer.instruction)),
+      (isTypeJ(waitOnReadBuffer.instruction), getImmediateTypeJ(waitOnReadBuffer.instruction)),
+      (isSystem(waitOnReadBuffer.instruction), readCSR(waitOnReadBuffer.instruction))
+    ).foldLeft(0.U){ case (other, (typeMatch, immediate)) => Mux(typeMatch, immediate, other)}
+  }
+  when (writeToMemory(waitOnReadBuffer.instruction)) {
+    registerReadResults.writeData.data := getRegisterValue(rs2Of(waitOnReadBuffer.instruction), registers.rs2ReadData)
+  }.otherwise {
+    registerReadResults.writeData.data := 0.U
+  }
+  // These are don't care wires for now
+  // We get the most upto date data from the retired instructions. Validity of the data
+  // will be checked when this data is moved to toExecBuffer
+  registerReadResults.src1.fwdAddr := 0.U
+  registerReadResults.src1.fromFwd := false.B
+  registerReadResults.src2.fwdAddr := 0.U
+  registerReadResults.src2.fromFwd := false.B
+  registerReadResults.writeData.fwdAddr := 0.U
+  registerReadResults.writeData.fromFwd := false.B
+
+  val toExecInterfaceStalled = toExec.ready && !toExec.fired
+
+  // writing to waitOntoExecBuffer
+  when (waitOntoExecBuffer.valid) {
+    when (flushingInstructions || !toExecInterfaceStalled) {
+      // instruction either flushed or is moved to toExecBuffer
+      waitOntoExecBuffer.valid := false.B
+    }.otherwise {
+      // updating data fields w.r.t. newly retired instructions
+      when(registers.writeback.valid) {
+        when (
+          rs1FieldPresent(waitOntoExecBuffer.instruction) && 
+          (rs1Of(waitOntoExecBuffer.instruction) === registers.writeback.rd)) {
+
+          waitOntoExecBuffer.src1.data := registers.writeback.data
+        }
+        when (
+          rs2FieldPresent(waitOntoExecBuffer.instruction) && 
+          (rs2Of(waitOntoExecBuffer.instruction) === registers.writeback.rd) 
+        ) {
+
+          when (writeToMemory(waitOntoExecBuffer.instruction)) {
+            waitOntoExecBuffer.writeData.data := registers.writeback.data
+          }.otherwise {
+            waitOntoExecBuffer.src2.data := registers.writeback.data
           }
-        })
+        }
+      }
+    }
+  }.otherwise {
+    when (toExecInterfaceStalled && waitOnReadBuffer.valid) {
+      // register reads will be blocked in the next cycle
+      // IMPORTANT: At least one of the below buffers should be free
+
+      // Data from the retired instruction in this cycle is forwarded
+      // when waitOntoExecBuffer is written
+      waitOntoExecBuffer := waitOnReadBuffer
+    }
+  }
+
+  // Few cases to consider:
+  // 1. If the address is dependent on the firing instruction, then we need forwarding 
+  // 2. If registerHasFwdAddr(address) is true, then we need forwarding unless the dependency
+  //      is because of the currently retiring instruction
+  def registerNeedsForwarding(address: UInt) = 
+    (rdFieldPresent(toExec.instruction) && (rdOf(toExec.instruction) === address)) || 
+    (registerHasFwdAddr(address) && !((fwdAddrOfRegisters(address) === writeBackResult.fwdAddr) && registers.writeback.valid))
+
+  def getFwdAddrOfRegister(address: UInt) = 
+    Mux(rdFieldPresent(toExec.instruction) && (rdOf(toExec.instruction) === address), toExec.fwdAddr, fwdAddrOfRegisters(address))
+
+  // This drivers the toExec interface
+  // There are 2 sources
+  //  1. waitOnReadBuffer: by default
+  //  2. waitOntoExecBuffer: When recovering from a stall
+  val toExecBuffer = RegInit(waitOntoExecBuffer.cloneType.Lit(_.valid -> false.B))
+  when (toExecInterfaceStalled) {
+    when (flushingInstructions) {
+      toExecBuffer.valid := false.B
+    }.elsewhen(writeBackResult.fired) {
+      // updating data from writeback interface
+      // *fromFwd and *fwdAddr are only valid on toExecBuffer
+      when (toExecBuffer.src1.fromFwd && (toExecBuffer.src1.fwdAddr === writeBackResult.fwdAddr)) {
+        toExecBuffer.src1.data := writeBackResult.writeBackData
+        toExecBuffer.src1.fromFwd := false.B
+      }
+      when (toExecBuffer.src2.fromFwd && (toExecBuffer.src2.fwdAddr === writeBackResult.fwdAddr)) {
+        toExecBuffer.src2.data := writeBackResult.writeBackData
+        toExecBuffer.src2.fromFwd := false.B
+      }
+      when (toExecBuffer.writeData.fromFwd && (toExecBuffer.writeData.fwdAddr === writeBackResult.fwdAddr)) {
+        toExecBuffer.writeData.data := writeBackResult.writeBackData
+        toExecBuffer.writeData.fromFwd := false.B
+      }
+    }
+  }.elsewhen(flushingInstructions) {
+    toExecBuffer.valid := false.B
+  }.otherwise {
+    when (waitOntoExecBuffer.valid) {
+      // recovering from stalls
+      toExecBuffer := waitOntoExecBuffer
+      // forwarding from writebackresult
+      when (registers.writeback.valid) {
+        when (rs1FieldPresent(waitOntoExecBuffer.instruction) && (rs1Of(waitOntoExecBuffer.instruction) === registers.writeback.rd)) {
+          toExecBuffer.src1.data := registers.writeback.data
+        }
+        when (rs2FieldPresent(waitOntoExecBuffer.instruction) && (rs2Of(waitOntoExecBuffer.instruction) === registers.writeback.rd)) {
+          when (writeToMemory(waitOntoExecBuffer.instruction)) {
+            toExecBuffer.writeData.data := registers.writeback.data
+          }.otherwise {
+            toExecBuffer.src2.data := registers.writeback.data
+          }
+        }
+      }
+      // Do we need forwarding for registers from pipeline
+      when (rs1FieldPresent(waitOntoExecBuffer.instruction)) {
+        toExecBuffer.src1.fromFwd := registerNeedsForwarding(rs1Of(waitOntoExecBuffer.instruction))
+        toExecBuffer.src1.fwdAddr := getFwdAddrOfRegister(rs1Of(waitOntoExecBuffer.instruction))
+      }.otherwise {
+        toExecBuffer.src1.fromFwd := false.B
+        toExecBuffer.src1.fwdAddr := false.B
+      }
+      when (rs2FieldPresent(waitOntoExecBuffer.instruction)) {
+        when (writeToMemory(waitOntoExecBuffer.instruction)) {
+          toExecBuffer.writeData.fromFwd := registerNeedsForwarding(rs2Of(waitOntoExecBuffer.instruction))
+          toExecBuffer.writeData.fwdAddr := getFwdAddrOfRegister(rs2Of(waitOntoExecBuffer.instruction))
+        }.otherwise {
+          toExecBuffer.src2.fromFwd := registerNeedsForwarding(rs2Of(waitOntoExecBuffer.instruction))
+          toExecBuffer.src2.fwdAddr := getFwdAddrOfRegister(rs2Of(waitOntoExecBuffer.instruction))
+        }
+      }.otherwise {
+        toExecBuffer.writeData.fromFwd := false.B
+        toExecBuffer.writeData.fwdAddr := false.B
+        toExecBuffer.src2.fromFwd := false.B
+        toExecBuffer.src2.fwdAddr := false.B
       }
     }.otherwise {
-      // This buffered entry will be moved to toExecDriver
-      toExecWaitingBuffer.valid := false.B
-    }
-  }.otherwise {
-    toExecWaitingBuffer := toExecDriverNext
-    // Only stored here when toExec is stalled
-    toExecWaitingBuffer.valid := toExecDriverNext.valid && toExecStalled
-    when(writeBackResult.fired && rdFieldPresent(writeBackResult.opcode) && writeBackResult.rdAddr.orR) {
-      Seq(toExecWaitingBuffer.src1, toExecWaitingBuffer.src2, toExecWaitingBuffer.writedata)
-      .zip(Seq(toExecDriverNext.src1, toExecDriverNext.src2, toExecDriverNext.writedata))
-      .foreach{ case(driver, next) => {
-        when(next.fromRob && (next.robAddr === writeBackResult.robAddr)) {
-          driver.fromRob := false.B
-          driver.data := writeBackResult.writeBackData
-        }
-      }}
-    }
-  }
-
-  val readingFrmRegisters = Wire(waitingForRead.cloneType)
-  val bufferedFrmFetch = RegInit(waitingForRead.cloneType Lit(_.valid -> false.B))
-  readingFrmRegisters := bufferedFrmFetch
-  when(fromFetch.fired) {
-    readingFrmRegisters.valid := true.B
-    readingFrmRegisters.instruction := fromFetch.instruction
-    readingFrmRegisters.pc := fromFetch.pc
-    readingFrmRegisters.meta := fromFetch.meta
-  }
-  registers.rs1 := rs1Of(readingFrmRegisters.instruction)
-  registers.rs2 := rs2Of(readingFrmRegisters.instruction)
-
-  waitingForRead := readingFrmRegisters
-  when(readingFrmRegisters.valid && !readingFrmRegisters.meta.exception) {
-    // No problem had occured during fetching of instruction
-    when(isSystemCall(readingFrmRegisters.instruction) || isIllegal(readingFrmRegisters.instruction)) {
-      waitingForRead.meta.exception := true.B
-      when(isIllegal(readingFrmRegisters.instruction)) {
-        waitingForRead.meta.mcause := mcauseEncodings.IllegalInstruction.U
+      // normal operation
+      toExecBuffer := registerReadResults
+      // forwarding data from writeBackResult already done
+      // Do we need forwarding for registers from pipeline
+      when (rs1FieldPresent(registerReadResults.instruction)) {
+        toExecBuffer.src1.fromFwd := registerNeedsForwarding(rs1Of(registerReadResults.instruction))
+        toExecBuffer.src1.fwdAddr := getFwdAddrOfRegister(rs1Of(registerReadResults.instruction))
       }.otherwise {
-        waitingForRead.meta.mcause := mcauseEncodings.mcauseForSystemCall(readingFrmRegisters.instruction, currentPriviledge)
+        toExecBuffer.src1.fromFwd := false.B
+        toExecBuffer.src1.fwdAddr := false.B
+      }
+      when (rs2FieldPresent(registerReadResults.instruction)) {
+        when (writeToMemory(registerReadResults.instruction)) {
+          toExecBuffer.writeData.fromFwd := registerNeedsForwarding(rs2Of(registerReadResults.instruction))
+          toExecBuffer.writeData.fwdAddr := getFwdAddrOfRegister(rs2Of(registerReadResults.instruction))
+        }.otherwise {
+          toExecBuffer.src2.fromFwd := registerNeedsForwarding(rs2Of(registerReadResults.instruction))
+          toExecBuffer.src2.fwdAddr := getFwdAddrOfRegister(rs2Of(registerReadResults.instruction))
+        }
+      }.otherwise {
+        toExecBuffer.writeData.fromFwd := false.B
+        toExecBuffer.writeData.fwdAddr := false.B
+        toExecBuffer.src2.fromFwd := false.B
+        toExecBuffer.src2.fwdAddr := false.B
       }
     }
   }
-  // Register files are not read when there is an execution pipeline stall
-  // unless there are no entries in waitingForRead and toExecWaitingBuffer.
-  // In which case we do one additional read.
-  when(toExecStalled && (waitingForRead.valid || toExecWaitingBuffer.valid)) { 
-    waitingForRead.valid := false.B 
+  // Driving toExec
+  toExec.ready := toExecBuffer.valid
+  toExec.instruction := toExecBuffer.instruction
+  toExec.meta := toExecBuffer.meta
+  toExec.pc := toExecBuffer.pc
+  toExec.src1.data := toExecBuffer.src1.data
+  toExec.src1.fromRob := toExecBuffer.src1.fromFwd
+  toExec.src1.robAddr := toExecBuffer.src1.fwdAddr
+  toExec.src2.data := toExecBuffer.src2.data
+  toExec.src2.fromRob := toExecBuffer.src2.fromFwd
+  toExec.src2.robAddr := toExecBuffer.src2.fwdAddr
+  toExec.writeData.data := toExecBuffer.writeData.data
+  toExec.writeData.fromRob := toExecBuffer.writeData.fromFwd
+  toExec.writeData.robAddr := toExecBuffer.writeData.fwdAddr
+
+  val mepc, mtvec = RegInit(0.U(XLEN.W))
+
+  val expected = RegInit(fromFetch.expected.cloneType.Lit(_.valid -> true.B, _.pc -> instructionStart.U(XLEN.W)))
+  // below will only assert for one cycle (and only one should assert at a time)
+  val getmtvec /* start interrupt/exception handler */, getxepc/* return from interrupt/exception handler */ = Wire(Bool())
+  when (getmtvec) {
+    expected.pc := mtvec
+    expected.valid := true.B
+  }.elsewhen(getxepc) {
+    expected.pc := mepc
+    expected.valid := true.B
+  }.elsewhen(flushingInstructions) {
+    expected.pc := branchResolution.nextCorrectPC
+    expected.valid := true.B
+  }.elsewhen(fromFetch.fired) {
+    expected.pc := Mux(isJAL(fromFetch.instruction), fromFetch.pc + getImmediateTypeJ(fromFetch.instruction), fromFetch.pc+4.U)
+    expected.valid := !isBranch(fromFetch.instruction) || isJAL(fromFetch.instruction)
   }
-
-  when(bufferedFrmFetch.valid) {
-    when(!toExecStalled) { bufferedFrmFetch.valid := false.B }
-  }.otherwise {
-    bufferedFrmFetch.valid := fromFetch.fired && toExecStalled && (waitingForRead.valid || toExecWaitingBuffer.valid)
-  }
-  fromFetch.ready := !bufferedFrmFetch.valid
-
-  val expectingFrmFetch = RegInit(fromFetch.expected.cloneType Lit(_.valid -> true.B, _.pc -> instructionBase.U))
-  // Unless the accepted instruction from fetch is a branch,
-  // we increment expectingFrmFetch by 4 for accepted instruction
-  when(fromFetch.fired) {
-    expectingFrmFetch.pc := expectingFrmFetch.pc + 4.U
-    // after a branch has been accepted, we will then accept the path determined
-    // by fetch unit, until a predicted branch is resolved to be mispredicted
-    when(isBranch(fromFetch.instruction)) { expectingFrmFetch.valid := false.B }
-  }
-  // Misprediction reported from execution pipeline
-  when(branchResolution.valid && branchResolution.failed) {
-    // Flushing the decode of fetched instructions
-    /**
-      * Although rare, there can be an instance where the fetch
-      * correctly detected the direction, but it was resolved failed
-      * because the predicted next instruction could not be fetched
-      * in time to properly evaluate the prediction by the execution
-      * pipeline.
-      * There can be a performance hit here.
-      */
-    Seq(bufferedFrmFetch.valid, waitingForRead.valid, toExecWaitingBuffer.valid, toExecDriver.valid)
-    .foreach(_ := false.B)
-    expectingFrmFetch.valid := true.B
-    expectingFrmFetch.pc := branchResolution.nextCorrectPC
-  }
-
-  // Stages of handling an instruction with SYSTEM opcode
-  val noSysIns :: sysInDecode :: sysInExec :: Nil = Enum(3)
-  val sysInsStatus = RegInit(noSysIns)
-  switch(sysInsStatus) {
-    is(noSysIns) { when(fromFetch.fired && isSystem(fromFetch.instruction)) { sysInsStatus := sysInDecode }}
-    is(sysInDecode) {
-      // system instruction flushed from decode
-      when(branchResolution.valid && branchResolution.failed) { sysInsStatus := noSysIns }
-      // system instruction pushed to pipeline
-      when(toExec.fired && isSystem(toExec.instruction)) { sysInsStatus := sysInExec }
-    }
-    is(sysInExec) { when(writeBackResult.fired && isSystem(writeBackResult.opcode)) { sysInsStatus := noSysIns }}
-  }
-  
-  // we wait for decode and execution pipelines to empty
-  // This happens when the pipeline detects an exception and
-  // has to empty newer instructions, to start fetching again
-  val waitingToEmptyPipeline = RegInit(false.B)
-  when(writeBackResult.fired && writeBackResult.meta.exception) {
-    waitingToEmptyPipeline := true.B
-
-    bufferedFrmFetch.valid := false.B
-    waitingForRead.valid := false.B
-    toExecWaitingBuffer.valid := false.B
-    toExecDriver.valid := false.B
-  } 
-
-  // performing writeback after instruction execution
-  registers.writeback.data := writeBackResult.writeBackData
-  registers.writeback.rd := writeBackResult.rdAddr
-  registers.writeback.valid := false.B
-  when(writeBackResult.fired) {
-    when(rdFieldPresent(writeBackResult.opcode) && writeBackResult.rdAddr.orR) {
-      registers.writeback.valid := true.B
-    }
-  }
-
-  /**
-    * TODO
-    * 1. Flushing decode unit after misprediction
-    * 2. Updating registerfile instruction retires
-    * 3. Retiring system instructions
-    * 4. Implemention Zicsr
-    * 5. Implementation ecall, mret, ebreak 
-    * 6. Way to ecall illegal instructions
-    */
-
-  // Structures from old decode mentioned until core.scala and system.scala can be changed
-  val registerFile = Mem(regCount, UInt(dataWidth.W))
-  // val mstatus = Mem(1, UInt(dataWidth.W))
-  // val mtvec = Mem(1, UInt(dataWidth.W))
-  val csrWriteOut = IO(Output(UInt(64.W)))
 }
 
 object DecodeUnit extends App{

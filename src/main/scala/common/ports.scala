@@ -222,7 +222,7 @@ class branchResToFetch extends composableInterface {
   *   robAddr is used to solve WAW dependencies
   */  
 class pullCommitFrmRob extends composableInterface {
-  val robAddr       = Input(UInt(robAddrWidth.W))
+  val fwdAddr       = Input(UInt(robAddrWidth.W))
   val rdAddr        = Input(UInt(5.W))
   val opcode = Input(UInt(7.W))
   val writeBackData = Input(UInt(64.W)) // mtval when exceptionOccured
@@ -231,6 +231,7 @@ class pullCommitFrmRob extends composableInterface {
   val mcause            = Input(UInt(64.W)) // place of mcasue field is changed, thus remove this
   val mepc              = Input(UInt(64.W)) // mepc field will be removed in the future
   val meta = Input(new pipeline.ports.meta)
+  val instruction = Input(UInt(ILEN.W))
 } 
 
 /**
@@ -283,6 +284,7 @@ class pushInsToPipeline extends composableInterface {
   val instruction = Output(UInt(32.W))
   val pc          = Output(UInt(64.W))
   val robAddr     = Input(UInt(robAddrWidth.W))   // allocated address in rob
+  val fwdAddr     = Input(UInt(fwdAddrWidth.W))   // allocated address in fwd
   val meta = Output(new pipeline.ports.meta)
 }
 

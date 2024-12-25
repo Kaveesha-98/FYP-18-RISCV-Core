@@ -35,6 +35,7 @@ object coreConfiguration {
   val dCacheTagWidth = 32 - dCacheLineWidth - dCacheDoubleWordOffsetWidth - 3
   val dCacheBlockSize = (1 << dCacheDoubleWordOffsetWidth)
   val instructionBase = 0x0000000040000000L
+  val instructionStart = instructionBase
   val XLEN = 64
   val ILEN = 32
   val uimmSize = 5
@@ -53,6 +54,31 @@ object coreConfiguration {
     }
   val maxExceptionMcause = 19
 
+
+  def isTypeI(instruction: UInt) = 
+    ((instruction(6,2) === BitPat("b00??0")) && instruction(4,3) =/= "b01".U(2.W)) || /* LOAD, OP-IMM, OP-IMM-32 */
+    (instruction(6,2) === "b11001".U(5.W)) /* JALR */
+  def isTypeR(instruction: UInt) = 
+    (instruction(6,2) === BitPat("b011?0")) /* OP, OP-32 */ || (instruction(6,2) === ("b01011".U(5.W))) /* AMO */
+  def isTypeS(instruction: UInt) = 
+    (instruction(6,2) === "b01000".U(5.W)) /* STORE */
+  def isTypeB(instruction: UInt) = 
+    (instruction(6,2) === "b11000".U(5.W)) /* BRANCH */
+  def isTypeU(instruction: UInt) = 
+    (instruction(6,2) === BitPat("b0?101"))
+  def isTypeJ(instruction: UInt) = 
+    (instruction(6,2) === "b11011".U(5.W))
+  def isSystem(instruction: UInt) = 
+    (instruction(6,2) === "b11100".U)
+
+  def getImmediateUimm(instruction: UInt) =
+    Cat(0.U(59.W), instruction(19,15))
+
+  def getImmediateTypeI(instruction: UInt) = Cat(Fill(XLEN-12, instruction(31)), instruction(31, 20))
+  def getImmediateTypeS(instruction: UInt) = Cat(Fill(XLEN-12, instruction(31)), instruction(31, 25), instruction(11, 7))
+  def getImmediateTypeB(instruction: UInt) = Cat(Fill(XLEN-12, instruction(31)), instruction(7), instruction(30, 25), instruction(11, 8), 0.U(1.W))
+  def getImmediateTypeU(instruction: UInt) = Cat(Fill(XLEN-32, instruction(31)), instruction(31, 12), 0.U(12.W))
+  def getImmediateTypeJ(instruction: UInt) = Cat(Fill(XLEN-20, instruction(31)), instruction(19, 12), instruction(20), instruction(30, 21), 0.U(1.W))
 
   def isBranch(instruction: UInt) = instruction(6, 4) === "b110".U(3.W)
   def isMExtenMul(instruction: UInt) = (instruction(6, 2) === BitPat("b011?0")) && instruction(25).asBool
