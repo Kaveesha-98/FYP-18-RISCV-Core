@@ -82,6 +82,9 @@ object coreConfiguration {
 
   def isBranch(instruction: UInt) = instruction(6, 4) === "b110".U(3.W)
   def isMExtenMul(instruction: UInt) = (instruction(6, 2) === BitPat("b011?0")) && instruction(25).asBool
+
+  
+  val mstatusInitial = 0 // TODO: Set proper initial value of mstatus here
 }
 
 object mcauseEncodings {
@@ -115,6 +118,8 @@ object priviledgeEncodings {
   val machine = 3
   val supervisor = 1
   val user = 0
+
+  val bitSize = 2
 }
 
 object CSRAddresses {

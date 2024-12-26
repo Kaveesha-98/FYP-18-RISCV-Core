@@ -232,6 +232,7 @@ class pullCommitFrmRob extends composableInterface {
   val mepc              = Input(UInt(64.W)) // mepc field will be removed in the future
   val meta = Input(new pipeline.ports.meta)
   val instruction = Input(UInt(ILEN.W))
+  val nextPC = Input(UInt(XLEN.W))
 } 
 
 /**

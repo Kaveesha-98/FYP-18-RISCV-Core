@@ -137,6 +137,10 @@ class decode(val hartid:Int = 0) extends Module {
   def isSystemCall(instruction: UInt) = Cat(rs2Of(instruction), funct3Of(instruction), opcode5BitsOf(instruction)) === "b0001000011100".U(13.W)
   def isJAL(instruction: UInt) = instruction(6,2) === "b11011".U(5.W)
   def WPRIbits(noOfBits: Int) = 0.U(noOfBits.W)
+  /* interrupts are enterred as a custom instruction will lower 30 bits equal to ecall */
+  def isECALLorInterrupt(instruction: UInt) = instruction(30, 0) === "h00000073".U(30.W)
+  def isMRET(instruction: UInt) = instruction === "h3020073".U(32.W)
+  def getMPPfromMSTATUS(mstatus: UInt) = mstatus(12,11)
   /**
     * Inputs and Outputs of the module
     */
@@ -157,7 +161,6 @@ class decode(val hartid:Int = 0) extends Module {
 
   // architectural registers
   val registers = Module(new registerfile)
-  val currentPriviledge = RegInit(priviledgeEncodings.machine.U(2.W))
 
   // Once a register read is requested, all instructions are moved
   // here. If registerfile.readPort is blocked (waitOntoExecBuffer.valid in next cycle),
@@ -484,19 +487,72 @@ class decode(val hartid:Int = 0) extends Module {
   val expected = RegInit(fromFetch.expected.cloneType.Lit(_.valid -> true.B, _.pc -> instructionStart.U(XLEN.W)))
   // below will only assert for one cycle (and only one should assert at a time)
   val getmtvec /* start interrupt/exception handler */, getxepc/* return from interrupt/exception handler */ = Wire(Bool())
-  when (getmtvec) {
+  when(flushingInstructions) {
+    expected.pc := branchResolution.nextCorrectPC
+    expected.valid := true.B
+  }.elsewhen (getmtvec) {
     expected.pc := mtvec
     expected.valid := true.B
   }.elsewhen(getxepc) {
     expected.pc := mepc
     expected.valid := true.B
-  }.elsewhen(flushingInstructions) {
-    expected.pc := branchResolution.nextCorrectPC
-    expected.valid := true.B
   }.elsewhen(fromFetch.fired) {
     expected.pc := Mux(isJAL(fromFetch.instruction), fromFetch.pc + getImmediateTypeJ(fromFetch.instruction), fromFetch.pc+4.U)
     expected.valid := !isBranch(fromFetch.instruction) || isJAL(fromFetch.instruction)
   }
+
+  when (!flushingInstructions && toExec.fired) {
+    // toExec has priority
+    registerHasFwdAddr(rdOf(toExec.instruction)) := true.B
+    fwdAddrOfRegisters(rdOf(toExec.instruction)) := toExec.fwdAddr
+  }
+  
+  when(
+    !(!flushingInstructions && toExec.fired && (rdOf(toExec.instruction) === rdOf(writeBackResult.instruction)) && rdFieldPresent(toExec.instruction)) && 
+    (writeBackResult.fired && rdFieldPresent(writeBackResult.instruction) && !isSystem(writeBackResult.instruction))
+  ) {
+    when (registerHasFwdAddr(rdOf(writeBackResult.instruction)) && (writeBackResult.fwdAddr === fwdAddrOfRegisters(rdOf(writeBackResult.instruction)))) {
+      registerHasFwdAddr(rdOf(writeBackResult.instruction)) := false.B // decode now has most upto date data
+    }
+  }
+  // Only exception we consider for now is ecall
+  getmtvec := fromFetch.fired && isECALLorInterrupt(fromFetch.instruction)
+  getxepc := fromFetch.fired && isMRET(fromFetch.instruction)
+
+  // This will always be ready
+  writeBackResult.ready := true.B
+
+  val pcOfNextInstructionToRetire = RegInit(instructionStart.U(XLEN.W))
+  when (writeBackResult.fired) {
+    when (isECALLorInterrupt(writeBackResult.instruction)) { 
+      pcOfNextInstructionToRetire := mtvec
+    }.elsewhen(isMRET(writeBackResult.instruction)) {
+      pcOfNextInstructionToRetire := mepc
+    }.otherwise {
+      pcOfNextInstructionToRetire := writeBackResult.nextPC
+    }
+  }
+
+  val mstatus = RegInit(mstatusInitial.U(XLEN.W))
+
+  val currentPriviledge = RegInit(priviledgeEncodings.machine.U(priviledgeEncodings.bitSize.W))
+  when (writeBackResult.fired) {
+    when (isECALLorInterrupt(writeBackResult.instruction)) {
+      currentPriviledge := priviledgeEncodings.machine.U
+    }.elsewhen(isMRET(writeBackResult.instruction)) {
+      currentPriviledge := getMPPfromMSTATUS(mstatus)
+    }
+  }
+
+  // read and store the CSR value read when the retired instruction was decoded
+  val storedCSRValue = Reg(UInt(XLEN.W))
+  when (waitOnReadBuffer.valid && isSystem(waitOnReadBuffer.instruction)) { storedCSRValue := readCSR(waitOnReadBuffer.instruction) }
+
+  registers.writeback.valid := writeBackResult.fired && rdFieldPresent(writeBackResult.instruction)
+  registers.writeback.rd := rdOf(writeBackResult.instruction)
+  registers.writeback.data := Mux(isSystem(writeBackResult.instruction), storedCSRValue, writeBackResult.writeBackData)
+
+  // TODO: Implement CSRs
 }
 
 object DecodeUnit extends App{
