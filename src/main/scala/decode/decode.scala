@@ -136,11 +136,9 @@ class decode(val hartid:Int = 0) extends Module {
   def isIllegal(instruction: UInt) = false.B
   def isSystemCall(instruction: UInt) = Cat(rs2Of(instruction), funct3Of(instruction), opcode5BitsOf(instruction)) === "b0001000011100".U(13.W)
   def isJAL(instruction: UInt) = instruction(6,2) === "b11011".U(5.W)
-  def WPRIbits(noOfBits: Int) = 0.U(noOfBits.W)
   /* interrupts are enterred as a custom instruction will lower 30 bits equal to ecall */
   def isECALLorInterrupt(instruction: UInt) = instruction(30, 0) === "h00000073".U(30.W)
   def isMRET(instruction: UInt) = instruction === "h3020073".U(32.W)
-  def getMPPfromMSTATUS(mstatus: UInt) = mstatus(12,11)
   /**
     * Inputs and Outputs of the module
     */
@@ -663,7 +661,19 @@ class decode(val hartid:Int = 0) extends Module {
       }
     }
   }
-  // TODO: Implement CSRs
+
+
+  // Updating CSRs
+  // mstatus
+  when (writeBackResult.fired) {
+    when (writeBackResult.execptionOccured) {
+      mstatus := setMSTATUStoHandleTrap(mstatus, currentPriviledge)
+    }.elsewhen(isMRET(writeBackResult.instruction)) {
+      mstatus := setMSTATUSafterTrapReturn(mstatus)
+    }.elsewhen(isSystem(writeBackResult.instruction) && rdFieldPresent(writeBackResult.instruction)) {
+      mstatus := formatBeforeWritingToMSTATUS(writeBackResult.writeBackData, mstatus)
+    }
+  }
 }
 
 object DecodeUnit extends App{

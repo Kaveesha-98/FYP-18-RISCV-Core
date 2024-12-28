@@ -12,6 +12,7 @@ import chisel3._
 import chisel3.util._
 import chisel3.experimental.BundleLiterals._
 import chisel3.experimental.IO
+import pipeline.ports.validBundle
 
 abstract class instructionEncoding
 case class TypeR() extends instructionEncoding
@@ -20,6 +21,14 @@ case class TypeS() extends instructionEncoding
 case class TypeB() extends instructionEncoding
 case class TypeU() extends instructionEncoding
 case class TypeJ() extends instructionEncoding
+
+object priviledgeEncodings {
+  val machine = 3
+  val supervisor = 1
+  val user = 0
+
+  val bitSize = 2
+}
 
 object coreConfiguration {
   val robAddrWidth = 3
@@ -88,8 +97,101 @@ object coreConfiguration {
   def isBranch(instruction: UInt) = instruction(6, 4) === "b110".U(3.W)
   def isMExtenMul(instruction: UInt) = (instruction(6, 2) === BitPat("b011?0")) && instruction(25).asBool
 
+  def WPRIbits(noOfBits: Int) = 0.U(noOfBits.W)
 
-  val mstatusInitial = 0 // TODO: Set proper initial value of mstatus here
+  // val mstatusInitial = 0 // TODO: Set proper initial value of mstatus here
+  val mstatusInitial = {
+    val SD = 0L // (R) All FS, XS and FS are read-only zero
+    val MDT = 0L // We don't implement Smrnmi extension
+    val MPELP = 0L // Don't think I have implemented any landind pad instruction
+    val MPV = 0L // Hypervisor not implemented, a default value was not given in spec
+    val GVA = 0L // Hypervisor not implemented, a default value was not given in spec
+    val MBE = 0L // little endian (fixed)
+    val SBE = 0L // S not implemented
+    val SXL = 0L // S not implemented
+    val UXL = 2L // 64-bit fixed
+    val SDT = 0L // (R) We don't implement S mode (A default value was not given in spec)
+    val SPELP = 0L // (R) No landing pad instructions implemented I think
+    val TSR = 0L // (R) S mode is not supported yet
+    val TW = 0L // (R/W) we never had a problem in letting wfi happen in U-mode
+    val TVM = 0L // We don't implement S-mode
+    val MXR = 0L // S-mode is not implemented
+    val SUM = 0L // S-mode is not implemented
+    val MPRV = 0L // Initially loads and stores will happen without any protection
+    val XS = 0L // No additional user extensions requiring new state implemented
+    val FS = 0L // Floating point not implemented
+    val MPP = priviledgeEncodings.user
+    val VS = 0L // vectors not implemented
+    val SPP = 0L // Anyway S not implemented
+    val MPIE = 0L // I don't think this matters
+    val UBE = 0L // little-endian (fixed)
+    val SPIE = 0L // S-mode not implemented
+    val MIE = 0L // No one wants to deal with interrupts at the start
+    val SIE = 0L // S-mode not implemented
+
+    (
+      0L + (SD<<63) + (MDT<<42) + (MPELP<<41) + (MPV<<39) + (GVA<<38) +
+      (MBE<<37) + (SBE<<36) + (SXL<<34) + (UXL<<32) + (SDT<<24) + (SPELP<<23) +
+      (TSR<<22) + (TW<<21) + (TVM<<20) + (MXR<<19) + (SUM<<18) + (MPRV<<17) + 
+      (XS<<15) + (FS<<13) + (MPP<<11) + (VS<<9) + (SPP<<8) + (MPIE<<7) + 
+      (UBE<<6) + (SPIE<<5) + (MIE<<3) + (SIE<<1)
+    )
+  }
+
+  def getMPPfromMSTATUS(mstatus: UInt) = mstatus(12,11)
+  def getMPIEfromMSTATUS(mstatus: UInt) = mstatus(7)
+  def getMIEfromMSTATUS(mstatus: UInt) = mstatus(3)
+  def getMPRVfromMSTATUS(mstatus: UInt) = mstatus(17)
+  def getTWfromMSTATUS(mstatus: UInt) = mstatus(21)
+
+  def formatBeforeWritingToMSTATUS(value: UInt, mstatus: UInt) = {
+    val SD = 0.U(1.W) // (R) All FS, XS and FS are read-only zero
+    val MDT = 0.U(1.W) // We don't implement Smrnmi extension
+    val MPELP = 0.U(1.W) // Don't think I have implemented any landind pad instruction
+    val MPV = 0.U(1.W) // Hypervisor not implemented, a default value was not given in spec
+    val GVA = 0.U(1.W) // Hypervisor not implemented, a default value was not given in spec
+    val MBE = 0.U(1.W) // little endian (fixed)
+    val SBE = 0.U(1.W) // S not implemented
+    val SXL = 0.U(2.W) // S not implemented
+    val UXL = 2.U(2.W) // 64-bit fixed
+    val SDT = 0.U(1.W) // (R) We don't implement S mode (A default value was not given in spec)
+    val SPELP = 0.U(1.W) // (R) No landing pad instructions implemented I think
+    val TSR = 0.U(1.W) // (R) S mode is not supported yet
+    val TW = getTWfromMSTATUS(value) // (R/W) we never had a problem in letting wfi happen in U-mode
+    val TVM = 0.U(1.W) // We don't implement S-mode
+    val MXR = 0.U(1.W) // S-mode is not implemented
+    val SUM = 0.U(1.W) // S-mode is not implemented
+    val MPRV = getMPRVfromMSTATUS(value) // Initially loads and stores will happen normally
+    val XS = 0.U(2.W) // No additional user extensions requiring new state implemented
+    val FS = 0.U(2.W) // Floating point not implemented
+    val MPP = MuxLookup(getMPPfromMSTATUS(value), getMPPfromMSTATUS(mstatus), /* Use existing value if new is illegal */ 
+    Seq(priviledgeEncodings.machine, priviledgeEncodings.user).map(_.U -> getMPPfromMSTATUS(value)))
+    val VS = 0.U(2.W) // vectors not implemented
+    val SPP = 0.U(1.W) // Anyway S not implemented
+    val MPIE = getMPIEfromMSTATUS(value) // I don't think this matters
+    val UBE = 0.U(1.W) // little-endian (fixed)
+    val SPIE = 0.U(1.W) // S-mode not implemented
+    val MIE = getMIEfromMSTATUS(value)
+    val SIE = 0.U(1.W) // S-mode not implemented
+
+    Cat(
+      SD, WPRIbits(20), MDT, MPELP, WPRIbits(1), MPV, GVA, MBE, SBE, SXL, UXL,
+      WPRIbits(7), SDT, SPELP, TSR, TW, TVM, MXR, SUM, MPRV, XS, FS, MPP, VS,
+      SPP, MPIE.asUInt, UBE, SPIE, WPRIbits(1), MIE, WPRIbits(1), SIE, WPRIbits(1)
+    )
+  }
+
+  def setMSTATUStoHandleTrap(mstatus: UInt, currentPriviledge: UInt) = {
+    Cat(mstatus(63,13), currentPriviledge, mstatus(10, 8), mstatus(3).asUInt, mstatus(6,4), 0.U(1.W), mstatus(2,0))
+  }
+
+  def setMSTATUSafterTrapReturn(mstatus: UInt) =
+    Cat(
+      mstatus(63,18), 
+      Mux(getMPPfromMSTATUS(mstatus) === priviledgeEncodings.machine.U, getMPRVfromMSTATUS(mstatus).asUInt, 0.U(1.W)), priviledgeEncodings.user.U(2.W),
+      mstatus(16,13), mstatus(10,8), 0.U(1.W), mstatus(6,4), mstatus(7), mstatus(2,0)
+    )
+
 }
 
 object mcauseEncodings {
@@ -117,14 +219,6 @@ object mcauseEncodings {
   // for ebreak and ecall
   def mcauseForSystemCall(instruction: UInt, currentPriviledge: UInt) =
     Mux(instruction(20).asBool, mcauseEncodings.Breakpoint.U, mcauseEncodings.EnvironmentCallFromUMode.U + currentPriviledge )
-}
-
-object priviledgeEncodings {
-  val machine = 3
-  val supervisor = 1
-  val user = 0
-
-  val bitSize = 2
 }
 
 object CSRAddresses {
