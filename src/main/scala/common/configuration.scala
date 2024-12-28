@@ -39,9 +39,14 @@ object coreConfiguration {
   val XLEN = 64
   val ILEN = 32
   val uimmSize = 5
+  val vendorid = 0
+  val impid = 0
+  val archid = 0
 
   val supportedExtensions = Seq('A', 'I', 'M', 'U')
   val supportsU = supportedExtensions.contains('U')
+
+  def getMISA = supportedExtensions.foldLeft(0x2L << (XLEN-2)){ case(misa, ext) => misa + (1 << (ext - 'A'))}
 
   def getImmediate[E <: instructionEncoding](instruction: UInt, encoding : E) = 
     encoding match {
@@ -83,7 +88,7 @@ object coreConfiguration {
   def isBranch(instruction: UInt) = instruction(6, 4) === "b110".U(3.W)
   def isMExtenMul(instruction: UInt) = (instruction(6, 2) === BitPat("b011?0")) && instruction(25).asBool
 
-  
+
   val mstatusInitial = 0 // TODO: Set proper initial value of mstatus here
 }
 
@@ -123,7 +128,47 @@ object priviledgeEncodings {
 }
 
 object CSRAddresses {
+  // Unpriviledged Floating Point CSRs: None implemented for now
+  val fflags = 0x001
+  val frm = 0x002
+  val fcsr = 0x003
+
+  // Unpriviledged Zicfiss extension CSR: None implemented for now
+  val ssp = 0x011
+
+  // Unpriviledged Counter/Timers
+  val cycle = 0xC00
+  val time = 0xC01
+  val instret = 0xC02
+  // No other performance monitoring CSRs implemented yet
+
+  // Not going to bother with supervisor-level CSR addresses for now
+
+  // Machine-level CSR addresses
+  // Machine information registers
+  val mvendorid = 0xF11
+  val marchid = 0xF12
+  val mimpid = 0xF13
+  val mhartid = 0xF14
+  val mconfigptr = 0xF15
+  // Machine Trap Setup
   val mstatus = 0x300
   val misa = 0x301
+  val medeleg = 0x302
+  val mideleg = 0x303
+  val mie = 0x304
   val mtvec = 0x305
+  val mcounteren = 0x306
+  // Machine Trap Handling
+  val mscratch = 0x340
+  val mepc = 0x341
+  val mcause = 0x342
+  val mtval = 0x343
+  val mip = 0x344
+  val mtinst = 0x34A
+  val mtval2 = 0x34B
+  // Machine Configuration
+  val menvcfg = 0x30A
+  val mseccfg = 0x747
+  // ignoring pmpcfg*, pmpaddr* and mstateen* registers for now
 }

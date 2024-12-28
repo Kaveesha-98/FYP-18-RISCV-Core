@@ -194,7 +194,7 @@ class decode(val hartid:Int = 0) extends Module {
   val stalledInstructionfromFetch = RegInit(waitOnReadBuffer.cloneType.Lit(_.valid -> false.B))
 
   // stall fromFetch when stalledInstructionfromFetch is occupied
-  fromFetch.ready := !stalledInstructionfromFetch.valid
+  // fromFetch.ready := !stalledInstructionfromFetch.valid
 
   // requesting architectural register read for each new instruction.
   // This requirces one cycle. The instruction is sent to waitOnReadBuffer
@@ -232,7 +232,10 @@ class decode(val hartid:Int = 0) extends Module {
   val flushingInstructions = branchResolution.valid && branchResolution.failed
   
   // Writing to stalledInstructionfromFetch, all conditions should be mutually exclusive
-  when (!stalledInstructionfromFetch.valid && !flushingInstructions) {
+  when (writeBackResult.fired && writeBackResult.execptionOccured) {
+    // When we see an exception all instructions also have to be flushed
+    stalledInstructionfromFetch.valid := false.B
+  }.elsewhen (!stalledInstructionfromFetch.valid && !flushingInstructions) {
     // Writes only happen when this buffer is empty
     when (registerReadsBlockedFromNextCycle || registerReadsNowBlocked) {
       // Only from fromFetch
@@ -249,7 +252,9 @@ class decode(val hartid:Int = 0) extends Module {
   }
 
   // Writing to waitOnReadBuffer
-  when ((!(registerReadsBlockedFromNextCycle || registerReadsNowBlocked)) && !flushingInstructions) {
+  when (writeBackResult.fired && writeBackResult.execptionOccured) {
+    waitOnReadBuffer.valid := false.B
+  }.elsewhen ((!(registerReadsBlockedFromNextCycle || registerReadsNowBlocked)) && !flushingInstructions) {
     // all these conditions should be mutually exclusive
     when (fromFetch.fired) {
       waitOnReadBuffer.instruction := fromFetch.instruction
@@ -269,6 +274,35 @@ class decode(val hartid:Int = 0) extends Module {
     waitOnReadBuffer.valid := false.B
   }
 
+  val MTIP = Input(Bool())
+
+  val misa = getMISA.U(XLEN.W)
+  val mvendorid = vendorid.U(32.W)
+  val marchid = archid.U(XLEN.W)
+  val mimpid = impid.U(XLEN.W)
+  val mhartid = hartid.U(XLEN.W)
+  val mstatus = RegInit(mstatusInitial.U(XLEN.W))
+  val mtvec = RegInit(0.U(XLEN.W))
+  val medeleg = 0.U(XLEN.W)
+  val mideleg = 0.U(XLEN.W)
+  val mip = MTIP.asUInt << 7.U
+  val mie = RegInit(0.U(XLEN.W))
+  val mtinst = RegInit(0.U(XLEN.W))
+  val mtval2 = RegInit(0.U(XLEN.W))
+  // TODO: mcounteren can cause illegal instruction when trying to
+  // read some other CSR registers
+  val mcounteren = RegInit(0.U(32.W))
+  val mcountinhibit = RegInit(0.U(32.W))
+  val mcycle = RegInit(0.U(XLEN.W))
+  val minstret = RegInit(0.U(XLEN.W))
+  val mscratch = RegInit(0.U(XLEN.W))
+  val mepc = RegInit(0.U(XLEN.W))
+  val mcasue = RegInit(0.U(XLEN.W))
+  val mtval = RegInit(0.U(XLEN.W))
+  val mconfigptr = 0.U(XLEN.W)
+  val menvcfg = 0.U(64.W)
+  val mseccfg = 0.U(64.W)
+
   // We have two sources
   //  1. registerfile: default
   //  2. registers.writeback (writeback data for retiring instruction)
@@ -277,7 +311,32 @@ class decode(val hartid:Int = 0) extends Module {
   def getRegisterValue(srcAddr: UInt, registerfileOutput: UInt) = 
     Mux(registers.writeback.valid && (registers.writeback.rd === srcAddr), registers.writeback.data, registerfileOutput)
 
-  def readCSR(instruction: UInt) = 0.U
+  def readCSR(instruction: UInt) = 
+    MuxLookup(instruction, 0.U, Seq(
+      CSRAddresses.cycle.U -> mcycle,
+      CSRAddresses.instret.U -> minstret,
+      CSRAddresses.mvendorid.U -> mvendorid,
+      CSRAddresses.marchid.U -> marchid,
+      CSRAddresses.mimpid.U -> mimpid,
+      CSRAddresses.mhartid.U -> mhartid,
+      CSRAddresses.mconfigptr.U -> mconfigptr,
+      CSRAddresses.mstatus.U -> mstatus,
+      CSRAddresses.misa.U -> misa,
+      CSRAddresses.medeleg.U -> medeleg,
+      CSRAddresses.mideleg.U -> mideleg,
+      CSRAddresses.mie.U -> mie,
+      CSRAddresses.mtvec.U -> mtvec,
+      CSRAddresses.mcounteren.U -> mcounteren,
+      CSRAddresses.mscratch.U -> mscratch,
+      CSRAddresses.mepc.U -> mepc,
+      CSRAddresses.mcause.U -> mcasue,
+      CSRAddresses.mtval.U -> mtval,
+      CSRAddresses.mip.U -> mip,
+      CSRAddresses.mtinst.U -> mtinst,
+      CSRAddresses.mtval2.U -> mtval2,
+      CSRAddresses.menvcfg.U -> menvcfg,
+      CSRAddresses.mseccfg.U -> mseccfg
+    ))
 
   val registerHasFwdAddr = RegInit(VecInit.fill(1 << regFileAddrSize)(false.B))
   val fwdAddrOfRegisters = RegInit(VecInit.fill(1 << regFileAddrSize)(0.U(fwdAddrWidth.W)))
@@ -326,7 +385,9 @@ class decode(val hartid:Int = 0) extends Module {
   val toExecInterfaceStalled = toExec.ready && !toExec.fired
 
   // writing to waitOntoExecBuffer
-  when (waitOntoExecBuffer.valid) {
+  when (writeBackResult.fired && writeBackResult.execptionOccured) {
+    waitOntoExecBuffer.valid := false.B
+  }.elsewhen (waitOntoExecBuffer.valid) {
     when (flushingInstructions || !toExecInterfaceStalled) {
       // instruction either flushed or is moved to toExecBuffer
       waitOntoExecBuffer.valid := false.B
@@ -379,7 +440,9 @@ class decode(val hartid:Int = 0) extends Module {
   //  1. waitOnReadBuffer: by default
   //  2. waitOntoExecBuffer: When recovering from a stall
   val toExecBuffer = RegInit(waitOntoExecBuffer.cloneType.Lit(_.valid -> false.B))
-  when (toExecInterfaceStalled) {
+  when (writeBackResult.fired && writeBackResult.execptionOccured) {
+    toExecBuffer.valid := false.B
+  }.elsewhen (toExecInterfaceStalled) {
     when (flushingInstructions) {
       toExecBuffer.valid := false.B
     }.elsewhen(writeBackResult.fired) {
@@ -482,12 +545,14 @@ class decode(val hartid:Int = 0) extends Module {
   toExec.writeData.fromRob := toExecBuffer.writeData.fromFwd
   toExec.writeData.robAddr := toExecBuffer.writeData.fwdAddr
 
-  val mepc, mtvec = RegInit(0.U(XLEN.W))
-
   val expected = RegInit(fromFetch.expected.cloneType.Lit(_.valid -> true.B, _.pc -> instructionStart.U(XLEN.W)))
   // below will only assert for one cycle (and only one should assert at a time)
   val getmtvec /* start interrupt/exception handler */, getxepc/* return from interrupt/exception handler */ = Wire(Bool())
-  when(flushingInstructions) {
+  // TODO: Currently the only supported exception is ECALL, when this changed, this has to be rethinked
+  when (writeBackResult.fired && writeBackResult.execptionOccured) {
+    expected.pc := mtvec
+    expected.valid := true.B
+  }.elsewhen (flushingInstructions) {
     expected.pc := branchResolution.nextCorrectPC
     expected.valid := true.B
   }.elsewhen (getmtvec) {
@@ -501,20 +566,27 @@ class decode(val hartid:Int = 0) extends Module {
     expected.valid := !isBranch(fromFetch.instruction) || isJAL(fromFetch.instruction)
   }
 
-  when (!flushingInstructions && toExec.fired) {
-    // toExec has priority
-    registerHasFwdAddr(rdOf(toExec.instruction)) := true.B
-    fwdAddrOfRegisters(rdOf(toExec.instruction)) := toExec.fwdAddr
-  }
-  
-  when(
-    !(!flushingInstructions && toExec.fired && (rdOf(toExec.instruction) === rdOf(writeBackResult.instruction)) && rdFieldPresent(toExec.instruction)) && 
-    (writeBackResult.fired && rdFieldPresent(writeBackResult.instruction) && !isSystem(writeBackResult.instruction))
-  ) {
-    when (registerHasFwdAddr(rdOf(writeBackResult.instruction)) && (writeBackResult.fwdAddr === fwdAddrOfRegisters(rdOf(writeBackResult.instruction)))) {
-      registerHasFwdAddr(rdOf(writeBackResult.instruction)) := false.B // decode now has most upto date data
+  when (writeBackResult.fired && writeBackResult.execptionOccured) {
+    registerHasFwdAddr.foreach(_ := false.B)
+  }.otherwise {
+
+    when (!flushingInstructions && toExec.fired) {
+      // toExec has priority
+      registerHasFwdAddr(rdOf(toExec.instruction)) := true.B
+      fwdAddrOfRegisters(rdOf(toExec.instruction)) := toExec.fwdAddr
     }
+    
+    when(
+      !(!flushingInstructions && toExec.fired && (rdOf(toExec.instruction) === rdOf(writeBackResult.instruction)) && rdFieldPresent(toExec.instruction)) && 
+      (writeBackResult.fired && rdFieldPresent(writeBackResult.instruction) && !isSystem(writeBackResult.instruction))
+    ) {
+      when (registerHasFwdAddr(rdOf(writeBackResult.instruction)) && (writeBackResult.fwdAddr === fwdAddrOfRegisters(rdOf(writeBackResult.instruction)))) {
+        registerHasFwdAddr(rdOf(writeBackResult.instruction)) := false.B // decode now has most upto date data
+      }
+    }
+
   }
+
   // Only exception we consider for now is ecall
   getmtvec := fromFetch.fired && isECALLorInterrupt(fromFetch.instruction)
   getxepc := fromFetch.fired && isMRET(fromFetch.instruction)
@@ -524,7 +596,7 @@ class decode(val hartid:Int = 0) extends Module {
 
   val pcOfNextInstructionToRetire = RegInit(instructionStart.U(XLEN.W))
   when (writeBackResult.fired) {
-    when (isECALLorInterrupt(writeBackResult.instruction)) { 
+    when (writeBackResult.execptionOccured) { 
       pcOfNextInstructionToRetire := mtvec
     }.elsewhen(isMRET(writeBackResult.instruction)) {
       pcOfNextInstructionToRetire := mepc
@@ -533,11 +605,10 @@ class decode(val hartid:Int = 0) extends Module {
     }
   }
 
-  val mstatus = RegInit(mstatusInitial.U(XLEN.W))
 
   val currentPriviledge = RegInit(priviledgeEncodings.machine.U(priviledgeEncodings.bitSize.W))
   when (writeBackResult.fired) {
-    when (isECALLorInterrupt(writeBackResult.instruction)) {
+    when (writeBackResult.execptionOccured) {
       currentPriviledge := priviledgeEncodings.machine.U
     }.elsewhen(isMRET(writeBackResult.instruction)) {
       currentPriviledge := getMPPfromMSTATUS(mstatus)
@@ -548,10 +619,50 @@ class decode(val hartid:Int = 0) extends Module {
   val storedCSRValue = Reg(UInt(XLEN.W))
   when (waitOnReadBuffer.valid && isSystem(waitOnReadBuffer.instruction)) { storedCSRValue := readCSR(waitOnReadBuffer.instruction) }
 
-  registers.writeback.valid := writeBackResult.fired && rdFieldPresent(writeBackResult.instruction)
+  registers.writeback.valid := writeBackResult.fired && rdFieldPresent(writeBackResult.instruction) && !writeBackResult.execptionOccured
   registers.writeback.rd := rdOf(writeBackResult.instruction)
   registers.writeback.data := Mux(isSystem(writeBackResult.instruction), storedCSRValue, writeBackResult.writeBackData)
 
+  // Drive fromFetch
+  // We only take in one system inctruction from fromFetch at a time
+  object systemProcessingStates {
+    val none :: decoding :: executing :: Nil = Enum(3)
+  }
+  val systemProcessingState = RegInit(systemProcessingStates.none)
+  when (systemProcessingState === systemProcessingStates.none) {
+    // default state
+    fromFetch.ready := !stalledInstructionfromFetch.valid
+  }.otherwise {
+    // Once get a system inctruction from fromFetch. We stop accepting
+    // new instructions until either the accpeted one is flushed or
+    // it is retired
+    fromFetch.ready := false.B
+  }
+  fromFetch.expected := expected
+  switch (systemProcessingState) {
+    is (systemProcessingStates.none) { 
+      when (fromFetch.fired && isSystem(fromFetch.instruction) && !flushingInstructions) {
+        systemProcessingState := systemProcessingStates.decoding
+      }
+    }
+    is (systemProcessingStates.decoding) {
+      // There should be only one system instruction is decode at most
+      when (flushingInstructions || (writeBackResult.fired && writeBackResult.execptionOccured)) {
+        // when there is instruction flush due to an older instruction, then
+        // we revert back to none state
+        systemProcessingState := systemProcessingStates.none
+      }.elsewhen (toExec.fired && isSystem(toExec.instruction)) {
+        systemProcessingState := systemProcessingStates.executing
+      }
+    }
+    is (systemProcessingStates.executing) {
+      // There should only be one sytem instruction is the execution pipeline
+      // at most
+      when (writeBackResult.fired && (isSystem(writeBackResult.instruction) || writeBackResult.execptionOccured)) {
+        systemProcessingState := systemProcessingStates.none
+      }
+    }
+  }
   // TODO: Implement CSRs
 }
 
