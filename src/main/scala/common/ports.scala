@@ -104,6 +104,8 @@ class meta extends Bundle {
   // If there was an exception, the detected agent will record the mcause
   // of the instruction here
   val mcause = UInt((log2Ceil(maxExceptionMcause) + 1).W)
+
+  def getMCAUSE() = Cat(mcause(log2Ceil(maxExceptionMcause)), 0.U((XLEN-(log2Ceil(maxExceptionMcause) + 1)).W), mcause((log2Ceil(maxExceptionMcause) - 1),0))
 }
 
 /**

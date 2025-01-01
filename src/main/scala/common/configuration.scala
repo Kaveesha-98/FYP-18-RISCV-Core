@@ -144,6 +144,18 @@ object coreConfiguration {
   def getMPRVfromMSTATUS(mstatus: UInt) = mstatus(17)
   def getTWfromMSTATUS(mstatus: UInt) = mstatus(21)
 
+  // No custom counters enabled
+  def formatBeforeWritingToMCOUNTEREN(value: UInt, mcounteren: UInt) = 
+    Cat(0.U((XLEN-3).W), value(2, 0))
+  
+  // MODE cannot be changed
+  def formatBeforeWritingToMTVEC(value: UInt, mtvec: UInt) = 
+    Cat(value(XLEN-1, 2), 0.U(2.W))
+
+  // Only MITP is implemented
+  def formatBeforeWritingToMIE(value: UInt, mie: UInt) = 
+    Cat(0.U((XLEN-8).W), value(7).asUInt, 0.U(7.W))
+
   def formatBeforeWritingToMSTATUS(value: UInt, mstatus: UInt) = {
     val SD = 0.U(1.W) // (R) All FS, XS and FS are read-only zero
     val MDT = 0.U(1.W) // We don't implement Smrnmi extension
@@ -265,4 +277,19 @@ object CSRAddresses {
   val menvcfg = 0x30A
   val mseccfg = 0x747
   // ignoring pmpcfg*, pmpaddr* and mstateen* registers for now
+
+  // Machine Non-Maskable Interrupt Handling (not implemented)
+  val mnscratch = 0x740
+  val mnepc = 0x741
+  val mncause = 0x742
+  val mnstatus = 0x744
+
+  // Machine Counter/Timers
+  val mcycle = 0x800
+  val minstret = 0x802
+  // ignoring mhpmcounter* registers
+
+  // Machine Counter Setup
+  val mcountinhibit = 0x320
+  // ignoring mhpevent* registers
 }

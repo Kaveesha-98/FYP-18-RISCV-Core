@@ -139,6 +139,7 @@ class decode(val hartid:Int = 0) extends Module {
   /* interrupts are enterred as a custom instruction will lower 30 bits equal to ecall */
   def isECALLorInterrupt(instruction: UInt) = instruction(30, 0) === "h00000073".U(30.W)
   def isMRET(instruction: UInt) = instruction === "h3020073".U(32.W)
+  def zicsrMatch(instruction: UInt, address: Int) = getImmediateTypeI(instruction) === address.U(12.W)
   /**
     * Inputs and Outputs of the module
     */
@@ -283,10 +284,10 @@ class decode(val hartid:Int = 0) extends Module {
   val mtvec = RegInit(0.U(XLEN.W))
   val medeleg = 0.U(XLEN.W)
   val mideleg = 0.U(XLEN.W)
-  val mip = MTIP.asUInt << 7.U
+  val mip = Cat(0.U((XLEN-8).W), MTIP.asUInt, 0.U(7.W))
   val mie = RegInit(0.U(XLEN.W))
-  val mtinst = RegInit(0.U(XLEN.W))
-  val mtval2 = RegInit(0.U(XLEN.W))
+  val mtinst = 0.U(XLEN.W)
+  val mtval2 = 0.U(XLEN.W)
   // TODO: mcounteren can cause illegal instruction when trying to
   // read some other CSR registers
   val mcounteren = RegInit(0.U(32.W))
@@ -333,7 +334,10 @@ class decode(val hartid:Int = 0) extends Module {
       CSRAddresses.mtinst.U -> mtinst,
       CSRAddresses.mtval2.U -> mtval2,
       CSRAddresses.menvcfg.U -> menvcfg,
-      CSRAddresses.mseccfg.U -> mseccfg
+      CSRAddresses.mseccfg.U -> mseccfg,
+      CSRAddresses.mcycle.U -> mcycle,
+      CSRAddresses.minstret.U -> minstret,
+      CSRAddresses.mcountinhibit.U -> mcountinhibit
     ))
 
   val registerHasFwdAddr = RegInit(VecInit.fill(1 << regFileAddrSize)(false.B))
@@ -664,16 +668,113 @@ class decode(val hartid:Int = 0) extends Module {
 
 
   // Updating CSRs
+  // minstret
+  val minstretInhibited = mcountinhibit(2).asBool
+  when (writeBackResult.fired) {
+    when (isSystem(writeBackResult.instruction) && rdFieldPresent(writeBackResult.instruction)
+    && zicsrMatch(writeBackResult.instruction, CSRAddresses.minstret)) {
+      minstret := writeBackResult.writeBackData
+    }.elsewhen (!minstretInhibited && !writeBackResult.meta.exception) {
+      minstret := minstret + 1.U
+    }
+  }
+
+  // mcycle
+  val mcycleInhibited = mcountinhibit(0).asBool
+  when (
+    writeBackResult.fired && !writeBackResult.meta.exception && isSystem(writeBackResult.instruction) &&
+    rdFieldPresent(writeBackResult.instruction) && zicsrMatch(writeBackResult.instruction, CSRAddresses.mcycle)
+  ) {
+    mcycle := writeBackResult.writeBackData
+  }.elsewhen (!mcycleInhibited) {
+    mcycle := mcycle + 1.U
+  }
+
+  // mtval
+  when (writeBackResult.fired) {
+    when (writeBackResult.meta.exception) {
+      mcasue := writeBackResult.writeBackData // Have to make sure this happens
+    }.elsewhen(isSystem(writeBackResult.instruction) && rdFieldPresent(writeBackResult.instruction) && 
+    zicsrMatch(writeBackResult.instruction, CSRAddresses.mcause)) {
+      mcasue := writeBackResult.writeBackData
+    }
+  }
+
+  // mcause
+  when (writeBackResult.fired) {
+    when (writeBackResult.meta.exception) {
+      mcasue := writeBackResult.meta.getMCAUSE()
+    }.elsewhen(isSystem(writeBackResult.instruction) && rdFieldPresent(writeBackResult.instruction) && 
+    zicsrMatch(writeBackResult.instruction, CSRAddresses.mcause)) {
+      mcasue := writeBackResult.writeBackData
+    }
+  }
+
+  // mepc
+  when (writeBackResult.fired) {
+    when (writeBackResult.meta.exception) {
+      mepc := pcOfNextInstructionToRetire // Interrupted instruction pc
+    }.elsewhen(isSystem(writeBackResult.instruction) && rdFieldPresent(writeBackResult.instruction) && 
+    zicsrMatch(writeBackResult.instruction, CSRAddresses.mepc)) {
+      mepc := writeBackResult.writeBackData
+    }
+  }
+
+  // mscratch
+  // Only software writes to this
+  when (writeBackResult.fired && !writeBackResult.meta.exception) {
+    when(isSystem(writeBackResult.instruction) && rdFieldPresent(writeBackResult.instruction) && 
+    zicsrMatch(writeBackResult.instruction, CSRAddresses.mscratch)) {
+      mscratch := writeBackResult.writeBackData
+    }
+  }
+
+  // mcounteren
+  // Only software writes to this
+  when (writeBackResult.fired && !writeBackResult.meta.exception) {
+    when(isSystem(writeBackResult.instruction) && rdFieldPresent(writeBackResult.instruction) && 
+    zicsrMatch(writeBackResult.instruction, CSRAddresses.mcounteren)) {
+      mcounteren := formatBeforeWritingToMCOUNTEREN(writeBackResult.writeBackData, mcounteren)
+    }
+  }
+
+
+  // mtvec
+  // Only software can change this
+  when (writeBackResult.fired && !writeBackResult.meta.exception) {
+    when(isSystem(writeBackResult.instruction) && rdFieldPresent(writeBackResult.instruction) && 
+    zicsrMatch(writeBackResult.instruction, CSRAddresses.mtvec)) {
+      mtvec := formatBeforeWritingToMTVEC(writeBackResult.writeBackData, mtvec)
+    }
+  }
+
+  // mie
+  // Only software changes this
+  when (writeBackResult.fired && !writeBackResult.meta.exception) {
+    when(isSystem(writeBackResult.instruction) && rdFieldPresent(writeBackResult.instruction) && 
+    zicsrMatch(writeBackResult.instruction, CSRAddresses.mie)) {
+      mie := formatBeforeWritingToMIE(writeBackResult.writeBackData, mie)
+    }
+  }
+
+
+  // medeleg and mideleg are all RO zero when S not implemented
+  // misa is a constant throughout runtime
+
   // mstatus
   when (writeBackResult.fired) {
-    when (writeBackResult.execptionOccured) {
+    when (writeBackResult.meta.exception) {
       mstatus := setMSTATUStoHandleTrap(mstatus, currentPriviledge)
     }.elsewhen(isMRET(writeBackResult.instruction)) {
       mstatus := setMSTATUSafterTrapReturn(mstatus)
-    }.elsewhen(isSystem(writeBackResult.instruction) && rdFieldPresent(writeBackResult.instruction)) {
+    }.elsewhen(isSystem(writeBackResult.instruction) && rdFieldPresent(writeBackResult.instruction) && 
+    zicsrMatch(writeBackResult.instruction, CSRAddresses.mstatus)) {
       mstatus := formatBeforeWritingToMSTATUS(writeBackResult.writeBackData, mstatus)
     }
   }
+
+  // mvendorid, marchid, mimpid is constant and never changed at runtime
+  // mhartid is unique per hart and never changed at runtime
 }
 
 object DecodeUnit extends App{
