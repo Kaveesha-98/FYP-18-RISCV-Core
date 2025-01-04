@@ -22,6 +22,9 @@ abstract class mExtn extends Module {
   def turnOn(x: UInt): Bool
 
   def getmOp(x: UInt) = Cat(x(3), x(14, 12))
+
+  // Signals whether or not the module is processing a request
+  val processing = IO(Output(Bool()))
 }
 
 class multiplier extends mExtn {

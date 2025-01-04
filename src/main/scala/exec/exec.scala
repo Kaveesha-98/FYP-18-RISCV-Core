@@ -8,6 +8,7 @@ import chisel3.experimental.IO
 // definition of all ports can be found here
 import pipeline.ports._
 import pipeline.configuration.coreConfiguration._
+import pipeline.ports
 
 class pullToPipeline extends composableInterface {
   val robAddr     = Input(UInt(robAddrWidth.W))
@@ -15,6 +16,7 @@ class pullToPipeline extends composableInterface {
   val src2        = Input(UInt(64.W))
   val writeData   = Input(UInt(64.W))
   val instruction = Input(UInt(32.W))
+  val meta        = Input(new ports.meta)
 }
 
 class execRequest extends Bundle {
@@ -33,10 +35,12 @@ class pushToMemory extends composableInterface {
 }
 
 class execResult extends Bundle {
-  val fwdAddr = Output(UInt(robAddrWidth.W))
-  val result = Output(UInt(XLEN.W))
-  val writeData = Output(UInt(XLEN.W))
-  val instruction = Output(UInt(ILEN.W))
+  val fwdAddr = UInt(robAddrWidth.W)
+  val result = UInt(XLEN.W)
+  val writeData = UInt(XLEN.W)
+  val instruction = UInt(ILEN.W)
+  val toFwd = Bool()
+  val dataOnly = Bool()
 }
 
 class toFwdFrmExec extends Bundle {
@@ -61,14 +65,78 @@ class toFwdFrmExec extends Bundle {
   * that require multiple cycles to execute such as multiply and divide
   * may be passed to memAccess unit before they have been finished 
   * executing and the results can be given later
+  * 
+  * There are three registers to manage the instruction flow
+  * 1. servicingRequest: This will drive the arithmetic hardware for
+  *   executing the instruction
+  * 2. stalledRequest: When toMemory and toFwd are stalled, this is used
+  *   to manage the flow
+  * 3. servicedRequest: After the request is serviced, it will be stored
+  *   until it is moved to the next stage of the pipeline
   */
 
 class exec extends Module {
 
   val toMemory  = IO(ComposableIO(Output(new execResult)))
-  val toFwd     = IO(ComposableIO(Output(new toFwdFrmExec)))
+  val toFwd     = IO(ComposableIO(Output(new toFwdFrmExec))) // TODO: remove
   val fromIssue = IO(ComposableIO(Input(new execRequest)))
   val branchResults = IO(Valid(UInt(XLEN.W)))
+
+  // This register will drive the inputs for the hardware arithmetic
+  // execution units.
+  // There are two sources for this register
+  // 1. fromIssue: when the pipeline is not stalled
+  // 2. stalledRequest: when recovering from a pipeline stall
+  // This register is updated whenever:
+  // 1. This register is not occupied with a request
+  // 2. Occupying instruction has been serviced and sent to servicedRequest
+  //    register
+  val servicingRequest = RegInit(Valid(fromIssue.bits.cloneType).Lit(_.valid -> false.B))
+
+  // This will be used when pipeline stalls happen or servicing of
+  // the request cannot happen in this cycle. 
+  // Only one source for this register (fromIssue interface) and
+  // updated when fromIssue.fired and the instruction occupying the
+  // servicingRequest cannot be sent to servicedRequest register.
+  val stalledRequest = RegInit(Valid(new Bundle {
+    val request = fromIssue.bits.cloneType
+    val executed = Bool()
+  }).Lit(_.valid -> false.B))
+
+  // This will be used to drive toMemory interface. There are 3
+  // sources when updating the register
+  // 1. servicingRequest: default option
+  // 2. multiply.output: result for integer multiply instructions,
+  //    when the result on multiply.output belongs to the same
+  //    instruction as in servicingRequest, the updated value will
+  //    be dependent on multiply.output and servicingRequest
+  // 3. divide.output: result for integer divide instructions,
+  //    when the result on divide.output belongs to the same
+  //    instruction as in servicingRequest, the updated value will
+  //    be dependent on divide.output and servicingRequest
+  // To update the register either 
+  // 1. The register is not occupied by a instruction (or DataOnly entry)
+  // 2. Occupied instruction is issued out toMemory
+  val servicedRequest = RegInit(Valid(toMemory.bits.cloneType).Lit(_.valid -> false.B))
+
+  // These modules perform integer multiplication and division. The
+  // inputs are driven by servicingRequest register through a ready
+  // valid interface. For each instruction that requires integer 
+  // multiplication or division, the input interface must only fire
+  // once from the corresponding module.
+  // 'divide' only supports one instruction at a time.
+  // 'multiply' should be supported and should support more than 
+  // instruction at a time.
+  val multiply = Module(new multiplier)
+  val divide = Module(new divider)
+
+  val toMemoryInterfaceStalled = toMemory.ready && !toMemory.fired
+
+  val instructionExecuted = false.B
+
+  //↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑
+  //|||||||||||||||||||||| new design ||||||||||||||||||||
+  //======================================================
 
   // executingRequest drives the request into executing logic
   // bufferedRequest is used to handle stalling situations 
@@ -93,8 +161,6 @@ class exec extends Module {
 
   branchResults.valid := executingRequest.valid && !executingRequest.bits.onStall && isBranch(executingRequest.bits.request.instruction)
 
-  val multiply = Module(new multiplier)
-  val divide = Module(new divider)
   Seq(multiply, divide).foreach(m => {
     m.inputs.valid := false.B
     when(executingRequest.valid && !executingRequest.bits.onStall) {
