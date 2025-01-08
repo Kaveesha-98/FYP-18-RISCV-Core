@@ -141,6 +141,13 @@ class exec extends Module {
   // be sent to servicedRequest
   val servicingRequestReadyForNextStage = Wire(Bool())
 
+  // Any instruction other than RV64M we can service in a single cycle
+  if (rv64mIsPipelined) {
+    // We only give the data to corresponding unit for RV64M instructions
+    servicingRequestReadyForNextStage := servicingRequest.valid && servicingRequest.bits.executed && 
+      Mux()
+  }
+
   // States for a instruction occupying servicingRequest,
   // for instructions that can be serviced in same cycle.
   // 1. new (the first cycle instruction occupies the register)
