@@ -91,17 +91,21 @@ class exec extends Module {
   // 1. This register is not occupied with a request
   // 2. Occupying instruction has been serviced and sent to servicedRequest
   //    register
-  val servicingRequest = RegInit(Valid(fromIssue.bits.cloneType).Lit(_.valid -> false.B))
+  // Meaning of 'executed' according to the type of instruction occupying
+  // the register
+  // -> RV64M: sources has been sent to the correspoding execution unit
+  // -> other: Instruction just occupyied the register in this cycle
+  val servicingRequest = RegInit(Valid( new Bundle {
+    val request = fromIssue.bits.cloneType
+    val executed = Bool()
+  }).Lit(_.valid -> false.B))
 
   // This will be used when pipeline stalls happen or servicing of
   // the request cannot happen in this cycle. 
   // Only one source for this register (fromIssue interface) and
   // updated when fromIssue.fired and the instruction occupying the
   // servicingRequest cannot be sent to servicedRequest register.
-  val stalledRequest = RegInit(Valid(new Bundle {
-    val request = fromIssue.bits.cloneType
-    val executed = Bool()
-  }).Lit(_.valid -> false.B))
+  val stalledRequest = RegInit(Valid(fromIssue.bits.cloneType).Lit(_.valid -> false.B))
 
   // This will be used to drive toMemory interface. There are 3
   // sources when updating the register
@@ -130,9 +134,17 @@ class exec extends Module {
   val multiply = Module(new multiplier)
   val divide = Module(new divider)
 
+  // Stall detected in next module in pipeline
   val toMemoryInterfaceStalled = toMemory.ready && !toMemory.fired
 
-  val instructionExecuted = false.B
+  // Can we move the instruction occupying the register servicingRequest
+  // be sent to servicedRequest
+  val servicingRequestReadyForNextStage = Wire(Bool())
+
+  // States for a instruction occupying servicingRequest,
+  // for instructions that can be serviced in same cycle.
+  // 1. new (the first cycle instruction occupies the register)
+  // 2. stalled
 
   //↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑
   //|||||||||||||||||||||| new design ||||||||||||||||||||

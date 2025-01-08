@@ -51,6 +51,7 @@ object coreConfiguration {
   val vendorid = 0
   val impid = 0
   val archid = 0
+  val rv64mIsPipelined = false
 
   val supportedExtensions = Seq('A', 'I', 'M', 'U')
   val supportsU = supportedExtensions.contains('U')
