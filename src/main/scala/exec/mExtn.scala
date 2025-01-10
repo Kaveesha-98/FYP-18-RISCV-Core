@@ -16,7 +16,10 @@ abstract class mExtn extends Module {
     val mOp = UInt(4.W) // {is32bitOp, funct3}
   })))
 
-  val output = IO(DecoupledIO(UInt(64.W)))
+  val output = IO(DecoupledIO(new Bundle {
+    val data = UInt(XLEN.W)
+    val fwdAddr = UInt(fwdAddrWidth.W)
+  }))
 
   // checks for 14th bit returns whether it can be serviced by the module
   def turnOn(x: UInt): Bool
@@ -24,7 +27,7 @@ abstract class mExtn extends Module {
   def getmOp(x: UInt) = Cat(x(3), x(14, 12))
 
   // Signals whether or not the module is processing a request
-  val processing = IO(Output(Bool()))
+  // val processing = IO(Output(Bool()))
 }
 
 class multiplier extends mExtn {

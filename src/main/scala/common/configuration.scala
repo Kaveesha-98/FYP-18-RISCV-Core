@@ -97,6 +97,9 @@ object coreConfiguration {
 
   def isBranch(instruction: UInt) = instruction(6, 4) === "b110".U(3.W)
   def isMExtenMul(instruction: UInt) = (instruction(6, 2) === BitPat("b011?0")) && instruction(25).asBool
+  def RV64Minstruction(instruction: UInt) = (instruction(6, 2) === BitPat("b011?0")) && instruction(25).asBool
+  def isIntegerMultiply(instruction: UInt) = (instruction(6, 2) === BitPat("b011?0")) && instruction(25).asBool && !instruction(14).asBool
+  def isIntegerDivide(instruction: UInt) = (instruction(6, 2) === BitPat("b011?0")) && instruction(25).asBool && instruction(14).asBool
 
   def WPRIbits(noOfBits: Int) = 0.U(noOfBits.W)
 

@@ -143,15 +143,54 @@ class exec extends Module {
 
   // Any instruction other than RV64M we can service in a single cycle
   if (rv64mIsPipelined) {
-    // We only give the data to corresponding unit for RV64M instructions
-    servicingRequestReadyForNextStage := servicingRequest.valid && servicingRequest.bits.executed && 
-      Mux()
+    // All instructions except RV64M instructions are ready in the same
+    // cycle the instruction arrives on 'servicingRequest'
+    // For RV64M, the instruction must give the sources to the corresponding
+    // executing unit first.
+    // Instruction in servicingRequest has higher priority over the data
+    // in multiply.output or divide.output.
+    // Only one of servicingRequest.bits.executed, multiply.inputs.fire or 
+    // divide.inputs.fire can be high at a time
+    // Prority is not performance based, just random thought ¯\_(ツ)_/¯
+    servicingRequestReadyForNextStage := servicingRequest.valid && Mux(!RV64Minstruction(servicingRequest.bits.request.instruction), true.B,
+      servicingRequest.bits.executed || (multiply.inputs.fire || divide.inputs.fire))
+
+    // multiply.output has a higher prority than divide.output, unless
+    // the data in divide.output corresponds to the data in servicingRequest
+    when (servicingRequestReadyForNextStage) {
+      // When the request in servicingRequest corresponds to the data in
+      // the execution unit, we also take the data in the execution unit
+      // in the same cycle
+      multiply.output.ready := 
+        !toMemoryInterfaceStalled && isIntegerMultiply(servicingRequest.bits.request.instruction)
+        (servicingRequest.bits.request.fwdAddr === multiply.output.bits.fwdAddr)
+    }.otherwise {
+      multiply.output.ready := !toMemoryInterfaceStalled
+    }
+    when (servicingRequestReadyForNextStage) {
+       // When the request in servicingRequest corresponds to the data in
+      // the execution unit, we also take the data in the execution unit
+      // in the same cycle
+      divide.output.ready := 
+        !toMemoryInterfaceStalled && isIntegerDivide(servicingRequest.bits.request.instruction)
+        (servicingRequest.bits.request.fwdAddr === divide.output.bits.fwdAddr)
+    }.otherwise {
+      divide.output.ready := !toMemoryInterfaceStalled && !multiply.output.valid
+    }
   }
 
-  // States for a instruction occupying servicingRequest,
-  // for instructions that can be serviced in same cycle.
-  // 1. new (the first cycle instruction occupies the register)
-  // 2. stalled
+  abstract class sameCycleArithmetic extends Module {
+    val inputs = IO(Input(new Bundle {
+      val src1 = UInt(XLEN.W)
+      val src2 = UInt(XLEN.W)
+    }))
+
+    val output = IO(Output(UInt(XLEN.W)))
+
+    def operation(x: UInt, y: UInt): UInt
+  }
+
+  val addition64bit = Module(new sameCycleArithmetic {def operation(x: UInt, y: UInt): UInt = x + y})
 
   //↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑
   //|||||||||||||||||||||| new design ||||||||||||||||||||
