@@ -27,6 +27,7 @@ class execRequest extends Bundle {
   val writeData = UInt(XLEN.W)
   val instruction = UInt(ILEN.W)
   val pc = UInt(XLEN.W)
+  val meta        = new ports.meta
 }
 
 class pushToMemory extends composableInterface {
@@ -43,6 +44,7 @@ class execResult extends Bundle {
   val instruction = UInt(ILEN.W)
   val toFwd = Bool()
   val dataOnly = Bool()
+  val meta        = new ports.meta
 }
 
 class toFwdFrmExec extends Bundle {
@@ -80,7 +82,7 @@ class toFwdFrmExec extends Bundle {
 class exec extends Module {
 
   val toMemory  = IO(ComposableIO(Output(new execResult)))
-  val toFwd     = IO(ComposableIO(Output(new toFwdFrmExec))) // TODO: remove
+  // val toFwd     = IO(ComposableIO(Output(new toFwdFrmExec))) // TODO: remove
   val fromIssue = IO(ComposableIO(Input(new execRequest)))
   val branchResults = IO(Valid(UInt(XLEN.W)))
 
@@ -154,8 +156,8 @@ class exec extends Module {
     // Only one of servicingRequest.bits.executed, multiply.inputs.fire or 
     // divide.inputs.fire can be high at a time
     // Prority is not performance based, just random thought ¯\_(ツ)_/¯
-    servicingRequestReadyForNextStage := servicingRequest.valid && Mux(!RV64Minstruction(servicingRequest.bits.request.instruction), true.B,
-      servicingRequest.bits.executed || (multiply.inputs.fire || divide.inputs.fire))
+    servicingRequestReadyForNextStage := servicingRequest.valid && (Mux(!RV64Minstruction(servicingRequest.bits.request.instruction), true.B,
+      servicingRequest.bits.executed || (multiply.inputs.fire || divide.inputs.fire)) || servicingRequest.bits.request.meta.exception)
 
     // multiply.output has a higher prority than divide.output, unless
     // the data in divide.output corresponds to the data in servicingRequest
@@ -164,8 +166,8 @@ class exec extends Module {
       // the execution unit, we also take the data in the execution unit
       // in the same cycle
       multiply.output.ready := 
-        !toMemoryInterfaceStalled && isIntegerMultiply(servicingRequest.bits.request.instruction)
-        (servicingRequest.bits.request.fwdAddr === multiply.output.bits.fwdAddr)
+        !toMemoryInterfaceStalled && isIntegerMultiply(servicingRequest.bits.request.instruction) &&
+        (servicingRequest.bits.request.fwdAddr === multiply.output.bits.fwdAddr) && !servicingRequest.bits.request.meta.exception
     }.otherwise {
       multiply.output.ready := !toMemoryInterfaceStalled
     }
@@ -175,7 +177,7 @@ class exec extends Module {
       // in the same cycle
       divide.output.ready := 
         !toMemoryInterfaceStalled && isIntegerDivide(servicingRequest.bits.request.instruction)
-        (servicingRequest.bits.request.fwdAddr === divide.output.bits.fwdAddr)
+        (servicingRequest.bits.request.fwdAddr === divide.output.bits.fwdAddr) && !servicingRequest.bits.request.meta.exception
     }.otherwise {
       divide.output.ready := !toMemoryInterfaceStalled && !multiply.output.valid
     }
@@ -270,7 +272,7 @@ class exec extends Module {
   and64bit.inputs.src2 := servicingRequest.bits.request.src2
 
   // branch execution
-  branchResults.valid := isBranch(servicingRequest.bits.request.instruction) && !servicingRequest.bits.executed
+  branchResults.valid := isBranch(servicingRequest.bits.request.instruction) && !servicingRequest.bits.executed && servicingRequest.valid && !servicingRequest.bits.request.meta.exception
   val slt = Mux(
     servicingRequest.bits.request.src1(63) ^ servicingRequest.bits.request.src1(63),
     servicingRequest.bits.request.src1(63), setLessThanUnsigned63bit.output(0)
@@ -287,6 +289,7 @@ class exec extends Module {
   )
   val branchTaken = 
     Mux(servicingRequest.bits.request.instruction(12), !selectSourceCompare, selectSourceCompare) || isUnconditionalJump(servicingRequest.bits.request.instruction)
+  // if this is an instruction with an exception, next instruction will be mtvec and will be set when the instruction retires
   val nextPCAfterServicingRequest = Mux(isBranch(servicingRequest.bits.request.instruction) && branchTaken, addition64bit.output, servicingRequest.bits.request.pc + 4.U(XLEN.W))
 
   branchResults.bits := nextPCAfterServicingRequest
@@ -304,6 +307,49 @@ class exec extends Module {
     case 6 => or64bit.output
     case 7 => and64bit.output
   })(funct3Of(servicingRequest.bits.request.instruction))
+
+  // driving the toMemory interface
+  toMemory.ready := servicedRequest.valid
+  toMemory.bits := servicedRequest.bits
+
+  // updating servicedRequest register
+  when (!toMemoryInterfaceStalled) {
+    when (servicingRequestReadyForNextStage) {
+      servicedRequest.valid := true.B
+      servicedRequest.bits.dataOnly := false.B
+      servicedRequest.bits.fwdAddr := servicingRequest.bits.request.fwdAddr
+      servicedRequest.bits.instruction := servicingRequest.bits.request.instruction
+      when (servicingRequest.bits.request.meta.exception) {
+        servicedRequest.bits.result := servicingRequest.bits.request.src1
+      }.otherwise {
+        servicedRequest.bits.result := Mux(
+          isMExtenMul(servicingRequest.bits.request.instruction),
+          Mux(isIntegerMultiply(servicingRequest.bits.request.instruction), multiply.output.bits.data, divide.output.bits.data),
+          sameCycleArithmeticResult
+        )
+      }
+      servicedRequest.bits.toFwd := Mux(RV64Minstruction(servicingRequest.bits.request.instruction),
+        (multiply.output.ready || divide.output.ready), /* Appropriate interface will be ready */
+        rdFieldPresent(servicingRequest.bits.request.instruction) &&
+        !isMemoryOperation(servicingRequest.bits.request.instruction) &&
+        !isSystem(servicingRequest.bits.request.instruction))
+      servicedRequest.bits.writeData := servicingRequest.bits.request.writeData
+    }.elsewhen(multiply.output.valid) {
+      servicedRequest.valid := true.B
+      servicedRequest.bits.dataOnly := true.B
+      servicedRequest.bits.fwdAddr := multiply.output.bits.fwdAddr
+      servicedRequest.bits.result := multiply.output.bits.data
+      servicedRequest.bits.toFwd := true.B
+    }.elsewhen(divide.output.valid) {
+      servicedRequest.valid := false.B
+      servicedRequest.bits.dataOnly := true.B
+      servicedRequest.bits.fwdAddr := divide.output.bits.fwdAddr
+      servicedRequest.bits.result := divide.output.bits.data
+      servicedRequest.bits.toFwd := true.B
+    }.otherwise {
+      servicedRequest.valid := false.B
+    }
+  }
 
   //↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑
   //|||||||||||||||||||||| new design ||||||||||||||||||||
@@ -326,7 +372,7 @@ class exec extends Module {
   }) Lit(_.valid -> false.B))
 
   toMemory.ready := executedRequest.valid && executedRequest.bits.pushToMem
-  toFwd.ready := executedRequest.valid && executedRequest.bits.pushToFwd
+  // toFwd.ready := executedRequest.valid && executedRequest.bits.pushToFwd
 
   fromIssue.ready := !bufferedRequest.valid
 
@@ -350,8 +396,8 @@ class exec extends Module {
   val reqServicedInThisCycle = 
     executingRequest.valid && !Seq(multiply, divide).map(m => m.inputs.valid && !m.inputs.ready).reduce(_ || _) 
 
-  val executedInstructionStalled = 
-    Seq(toFwd, toMemory).map(i => i.fired || !i.ready).reduce(_ && _)
+  val executedInstructionStalled = false.B
+    // Seq(toFwd, toMemory).map(i => i.fired || !i.ready).reduce(_ && _)
 
   val nextResult = Wire(executedRequest.bits.result.cloneType)
   nextResult.fwdAddr := executingRequest.bits.request.fwdAddr

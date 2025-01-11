@@ -104,6 +104,12 @@ object coreConfiguration {
   def isSubstraction(instruction: UInt) = instruction(6,2) === BitPat("b011?0") && instruction(30).asBool
   def isUnconditionalJump(instruction: UInt) = instruction(6,2) === BitPat("b110?1")
   def funct3Of(instruction: UInt) = instruction(14, 12)
+  // rd not valid for stores and conditional branches
+  def rdFieldPresent(instruction: UInt) = 
+    (instruction(5, 2) === "b1000".U(4.W)) || (instruction(6, 2) === "b01001".U(5.W))
+  // LOAD, STORE, LOAD-FP, STORE-FP, custom-0, custom-1, MISC-MEM, AMO
+  def isMemoryOperation(instruction: UInt) = 
+    Cat(instruction(6).asUInt, instruction(4).asUInt) === "b00".U(2.W)
 
   //def isConditionalBranch(instruction: UInt) = instruction(6, 2) === "b11000"
   def opcode5BitsOf(instruction: UInt) = instruction(6, 2)
