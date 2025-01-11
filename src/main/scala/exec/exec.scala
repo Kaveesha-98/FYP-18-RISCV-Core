@@ -334,6 +334,7 @@ class exec extends Module {
         !isMemoryOperation(servicingRequest.bits.request.instruction) &&
         !isSystem(servicingRequest.bits.request.instruction))
       servicedRequest.bits.writeData := servicingRequest.bits.request.writeData
+      servicedRequest.bits.meta := servicingRequest.bits.request.meta
     }.elsewhen(multiply.output.valid) {
       servicedRequest.valid := true.B
       servicedRequest.bits.dataOnly := true.B
@@ -350,6 +351,16 @@ class exec extends Module {
       servicedRequest.valid := false.B
     }
   }
+
+  // setting the inputs multiply and divide units
+  multiply.inputs.bits.src1 := servicingRequest.bits.request.src1
+  multiply.inputs.bits.src2 := servicingRequest.bits.request.src2
+  multiply.inputs.bits.mOp := multiply.getmOp(servicingRequest.bits.request.instruction)
+  multiply.inputs.valid := isIntegerMultiply(servicingRequest.bits.request.instruction)
+  divide.inputs.bits.src1 := servicingRequest.bits.request.src1
+  divide.inputs.bits.src2 := servicingRequest.bits.request.src2
+  divide.inputs.bits.mOp := divide.getmOp(servicingRequest.bits.request.instruction)
+  divide.inputs.valid := isIntegerDivide(servicingRequest.bits.request.instruction)
 
   //↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑
   //|||||||||||||||||||||| new design ||||||||||||||||||||
