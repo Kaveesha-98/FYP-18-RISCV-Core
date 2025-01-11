@@ -102,6 +102,8 @@ object coreConfiguration {
   def isIntegerDivide(instruction: UInt) = (instruction(6, 2) === BitPat("b011?0")) && instruction(25).asBool && instruction(14).asBool
   def is32Arithmetic(instruction: UInt) = instruction(6,2) === BitPat("b0?110")
   def isSubstraction(instruction: UInt) = instruction(6,2) === BitPat("b011?0") && instruction(30).asBool
+  def isUnconditionalJump(instruction: UInt) = instruction(6,2) === BitPat("b110?1")
+  def funct3Of(instruction: UInt) = instruction(14, 12)
 
   //def isConditionalBranch(instruction: UInt) = instruction(6, 2) === "b11000"
   def opcode5BitsOf(instruction: UInt) = instruction(6, 2)

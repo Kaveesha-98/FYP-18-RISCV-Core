@@ -116,7 +116,6 @@ class decode(val hartid:Int = 0) extends Module {
   def rs1Of(instruction: UInt) = instruction(19, 15)
   def rs2Of(instruction: UInt) = instruction(24, 20)
   def rdOf(instruction: UInt) = instruction(11, 7)
-  def funct3Of(instruction: UInt) = instruction(14, 12)
   // rd note valid for stores and conditional branches
   def rdFieldPresent(instruction: UInt) = 
     (instruction(5, 2) === "b1000".U(4.W)) || (instruction(6, 2) === "b01001".U(5.W))

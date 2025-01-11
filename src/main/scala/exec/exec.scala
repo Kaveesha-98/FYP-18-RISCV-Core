@@ -269,6 +269,42 @@ class exec extends Module {
   and64bit.inputs.src1 := servicingRequest.bits.request.src1
   and64bit.inputs.src2 := servicingRequest.bits.request.src2
 
+  // branch execution
+  branchResults.valid := isBranch(servicingRequest.bits.request.instruction) && !servicingRequest.bits.executed
+  val slt = Mux(
+    servicingRequest.bits.request.src1(63) ^ servicingRequest.bits.request.src1(63),
+    servicingRequest.bits.request.src1(63), setLessThanUnsigned63bit.output(0)
+  )
+  val sltu = Mux(
+    servicingRequest.bits.request.src1(63) ^ servicingRequest.bits.request.src1(63),
+    servicingRequest.bits.request.src2(63), setLessThanUnsigned63bit.output(0)
+  )
+  val equals = !xor64bit.output.orR
+  val selectSourceCompare = Mux(
+    servicingRequest.bits.request.instruction(14),
+    Mux(servicingRequest.bits.request.instruction(13), sltu, slt),
+    equals
+  )
+  val branchTaken = 
+    Mux(servicingRequest.bits.request.instruction(12), !selectSourceCompare, selectSourceCompare) || isUnconditionalJump(servicingRequest.bits.request.instruction)
+  val nextPCAfterServicingRequest = Mux(isBranch(servicingRequest.bits.request.instruction) && branchTaken, addition64bit.output, servicingRequest.bits.request.pc + 4.U(XLEN.W))
+
+  branchResults.bits := nextPCAfterServicingRequest
+  
+  def take32signExtendedWhenNeeded(result64bit: UInt) = 
+    Cat(Mux(is32Arithmetic(servicingRequest.bits.request.instruction), Fill(32, result64bit(31)), result64bit(63,32)), result64bit(31,0))
+  
+  val sameCycleArithmeticResult = VecInit.tabulate(8)(_ match {
+    case 0 => take32signExtendedWhenNeeded(addition64bit.output)
+    case 1 => take32signExtendedWhenNeeded(shiftLeft64bit.output)
+    case 2 => slt.asUInt
+    case 3 => sltu.asUInt
+    case 4 => xor64bit.output
+    case 5 => Mux(servicingRequest.bits.request.instruction(30), shiftRightArithmetic64bit.output, take32signExtendedWhenNeeded(shiftRightLogic64bit.output))
+    case 6 => or64bit.output
+    case 7 => and64bit.output
+  })(funct3Of(servicingRequest.bits.request.instruction))
+
   //↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑
   //|||||||||||||||||||||| new design ||||||||||||||||||||
   //======================================================
