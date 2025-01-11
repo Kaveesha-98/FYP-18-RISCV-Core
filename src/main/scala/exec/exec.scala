@@ -356,11 +356,11 @@ class exec extends Module {
   multiply.inputs.bits.src1 := servicingRequest.bits.request.src1
   multiply.inputs.bits.src2 := servicingRequest.bits.request.src2
   multiply.inputs.bits.mOp := multiply.getmOp(servicingRequest.bits.request.instruction)
-  multiply.inputs.valid := isIntegerMultiply(servicingRequest.bits.request.instruction)
+  multiply.inputs.valid := isIntegerMultiply(servicingRequest.bits.request.instruction) && servicingRequest.valid && !servicingRequest.bits.executed
   divide.inputs.bits.src1 := servicingRequest.bits.request.src1
   divide.inputs.bits.src2 := servicingRequest.bits.request.src2
   divide.inputs.bits.mOp := divide.getmOp(servicingRequest.bits.request.instruction)
-  divide.inputs.valid := isIntegerDivide(servicingRequest.bits.request.instruction)
+  divide.inputs.valid := isIntegerDivide(servicingRequest.bits.request.instruction) && servicingRequest.valid && !servicingRequest.bits.executed
 
   //↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑
   //|||||||||||||||||||||| new design ||||||||||||||||||||
