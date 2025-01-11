@@ -9,6 +9,7 @@ import chisel3.experimental.IO
 import pipeline.ports._
 import pipeline.configuration.coreConfiguration._
 import pipeline.ports
+import pipeline.decode.constants.opcode5MSBs
 
 class pullToPipeline extends composableInterface {
   val robAddr     = Input(UInt(robAddrWidth.W))
@@ -25,6 +26,7 @@ class execRequest extends Bundle {
   val src2 = UInt(XLEN.W)
   val writeData = UInt(XLEN.W)
   val instruction = UInt(ILEN.W)
+  val pc = UInt(XLEN.W)
 }
 
 class pushToMemory extends composableInterface {
@@ -200,6 +202,72 @@ class exec extends Module {
   val shiftRightArithmetic64bit = Module(new sameCycleArithmetic {def operation(x: UInt, y: UInt): UInt = (x.asSInt >> y(5,0)).asUInt})
   val or64bit = Module(new sameCycleArithmetic {def operation(x: UInt, y: UInt): UInt = x | y})
   val and64bit = Module(new sameCycleArithmetic {def operation(x: UInt, y: UInt): UInt = x & y})
+
+  // setting up inputs for addition
+  when ((servicingRequest.bits.request.instruction) === opcode5MSBs.condJump.U) {
+    // Have to calculate the jumping instruction when branch condition true
+    addition64bit.inputs.src1 := servicingRequest.bits.request.pc
+    addition64bit.inputs.src2 := getImmediateTypeB(servicingRequest.bits.request.instruction)
+  }.otherwise {
+    // For all other requests, if addition is required, the sources must be
+    // in src1 and src2
+    addition64bit.inputs.src1 := servicingRequest.bits.request.src1
+    addition64bit.inputs.src2 := Mux(isSubstraction(servicingRequest.bits.request.instruction), ~(servicingRequest.bits.request.src2) + 1.U(XLEN.W), servicingRequest.bits.request.src2)
+  }
+
+  // setting up inputs for shift left logic
+  // only used for sll, sllw, slli, sllwi
+  // source 1 will always be src1
+  shiftLeft64bit.inputs.src1 := servicingRequest.bits.request.src1
+  // Only 5 LSBs considered for 32 bit ops
+  // Only 6 LSBs considered for 64 bit ops
+  shiftLeft64bit.inputs.src2 := Cat(
+    0.U((XLEN-6).W), 
+    Mux(is32Arithmetic(servicingRequest.bits.request.instruction), 0.U(1.W), servicingRequest.bits.request.src2(5).asUInt),
+    servicingRequest.bits.request.src2(4,0)
+  )
+
+  // setting inputs for set less than
+  // we only look at 63 LSBs as unsigned values,
+  // then use that result to calculate for full 64 bits later
+  setLessThanUnsigned63bit.inputs.src1 := servicingRequest.bits.request.src1(62,0)
+  setLessThanUnsigned63bit.inputs.src2 := servicingRequest.bits.request.src2(62,0)
+
+  // setting inputs for xor
+  xor64bit.inputs.src1 := servicingRequest.bits.request.src1
+  xor64bit.inputs.src2 := servicingRequest.bits.request.src2
+
+  // settingup inputs for shift right logic
+  // sign extending for 32 calculations, we dont have to change anything later
+  shiftRightLogic64bit.inputs.src1 := Cat(
+    Mux(is32Arithmetic(servicingRequest.bits.request.instruction), 0.U(32.W), servicingRequest.bits.request.src1(63,32)),
+    servicingRequest.bits.request.src1(31,0)
+  )
+  shiftRightLogic64bit.inputs.src2 := Cat(
+    0.U((XLEN-6).W),
+    Mux(is32Arithmetic(servicingRequest.bits.request.instruction), 0.U(1.W), servicingRequest.bits.request.src2(5).asUInt),
+    servicingRequest.bits.request.src2(4,0)
+  )
+
+  // settingup inputs for shift right arithmetic
+  // sign extending for 32 calculations, we dont have to change anything later
+  shiftRightArithmetic64bit.inputs.src1 := Cat(
+    Mux(is32Arithmetic(servicingRequest.bits.request.instruction), Fill(32, servicingRequest.bits.request.src1(31)) , servicingRequest.bits.request.src1(63,32)),
+    servicingRequest.bits.request.src1(31,0)
+  )
+  shiftRightArithmetic64bit.inputs.src2 := Cat(
+    0.U((XLEN-6).W),
+    Mux(is32Arithmetic(servicingRequest.bits.request.instruction), 0.U(1.W), servicingRequest.bits.request.src2(5).asUInt),
+    servicingRequest.bits.request.src2(4,0)
+  )
+
+  // setting up inputs for or
+  or64bit.inputs.src1 := servicingRequest.bits.request.src1
+  or64bit.inputs.src2 := servicingRequest.bits.request.src2
+
+  // setting up inputs for and
+  and64bit.inputs.src1 := servicingRequest.bits.request.src1
+  and64bit.inputs.src2 := servicingRequest.bits.request.src2
 
   //↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑
   //|||||||||||||||||||||| new design ||||||||||||||||||||

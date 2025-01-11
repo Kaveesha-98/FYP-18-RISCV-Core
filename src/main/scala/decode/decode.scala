@@ -117,7 +117,6 @@ class decode(val hartid:Int = 0) extends Module {
   def rs2Of(instruction: UInt) = instruction(24, 20)
   def rdOf(instruction: UInt) = instruction(11, 7)
   def funct3Of(instruction: UInt) = instruction(14, 12)
-  def opcode5BitsOf(instruction: UInt) = instruction(6, 2)
   // rd note valid for stores and conditional branches
   def rdFieldPresent(instruction: UInt) = 
     (instruction(5, 2) === "b1000".U(4.W)) || (instruction(6, 2) === "b01001".U(5.W))
@@ -363,7 +362,7 @@ class decode(val hartid:Int = 0) extends Module {
     registerReadResults.src2.data := Seq(
       (isTypeI(waitOnReadBuffer.instruction), getImmediateTypeI(waitOnReadBuffer.instruction)),
       (isTypeS(waitOnReadBuffer.instruction), getImmediateTypeS(waitOnReadBuffer.instruction)),
-      (isTypeB(waitOnReadBuffer.instruction), getImmediateTypeB(waitOnReadBuffer.instruction)),
+      // (isTypeB(waitOnReadBuffer.instruction), getImmediateTypeB(waitOnReadBuffer.instruction)), // Type has rs2 field
       (isTypeU(waitOnReadBuffer.instruction), getImmediateTypeU(waitOnReadBuffer.instruction)),
       (isTypeJ(waitOnReadBuffer.instruction), getImmediateTypeJ(waitOnReadBuffer.instruction)),
       (isSystem(waitOnReadBuffer.instruction), readCSR(waitOnReadBuffer.instruction))

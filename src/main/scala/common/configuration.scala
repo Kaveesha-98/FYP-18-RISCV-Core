@@ -100,6 +100,11 @@ object coreConfiguration {
   def RV64Minstruction(instruction: UInt) = (instruction(6, 2) === BitPat("b011?0")) && instruction(25).asBool
   def isIntegerMultiply(instruction: UInt) = (instruction(6, 2) === BitPat("b011?0")) && instruction(25).asBool && !instruction(14).asBool
   def isIntegerDivide(instruction: UInt) = (instruction(6, 2) === BitPat("b011?0")) && instruction(25).asBool && instruction(14).asBool
+  def is32Arithmetic(instruction: UInt) = instruction(6,2) === BitPat("b0?110")
+  def isSubstraction(instruction: UInt) = instruction(6,2) === BitPat("b011?0") && instruction(30).asBool
+
+  //def isConditionalBranch(instruction: UInt) = instruction(6, 2) === "b11000"
+  def opcode5BitsOf(instruction: UInt) = instruction(6, 2)
 
   def WPRIbits(noOfBits: Int) = 0.U(noOfBits.W)
 
