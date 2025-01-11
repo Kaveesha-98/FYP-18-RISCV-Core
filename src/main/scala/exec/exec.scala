@@ -188,9 +188,18 @@ class exec extends Module {
     val output = IO(Output(UInt(XLEN.W)))
 
     def operation(x: UInt, y: UInt): UInt
+
+    output := operation(inputs.src1, inputs.src2)
   }
 
   val addition64bit = Module(new sameCycleArithmetic {def operation(x: UInt, y: UInt): UInt = x + y})
+  val shiftLeft64bit = Module(new sameCycleArithmetic {def operation(x: UInt, y: UInt): UInt = x << y(5,0)})
+  val setLessThanUnsigned63bit = Module(new sameCycleArithmetic {def operation(x: UInt, y: UInt): UInt = (x < y).asUInt})
+  val xor64bit = Module(new sameCycleArithmetic {def operation(x: UInt, y: UInt): UInt = x ^ y})
+  val shiftRightLogic64bit = Module(new sameCycleArithmetic {def operation(x: UInt, y: UInt): UInt = x >> y(5,0)})
+  val shiftRightArithmetic64bit = Module(new sameCycleArithmetic {def operation(x: UInt, y: UInt): UInt = (x.asSInt >> y(5,0)).asUInt})
+  val or64bit = Module(new sameCycleArithmetic {def operation(x: UInt, y: UInt): UInt = x | y})
+  val and64bit = Module(new sameCycleArithmetic {def operation(x: UInt, y: UInt): UInt = x & y})
 
   //↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑
   //|||||||||||||||||||||| new design ||||||||||||||||||||
