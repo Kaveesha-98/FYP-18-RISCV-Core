@@ -413,8 +413,21 @@ class exec extends Module {
   }
 
   val quickForwardable = (servicingRequest.bits.request.instruction(6,4) === BitPat("b0?1")) && !RV64Minstruction(servicingRequest.bits.request.instruction)
-  quickForward.valid := servicingRequest.valid && quickForwardable // OP-IMM, OP, AUIPC, LUI, OP-IMM-32, OP-32
+  quickForward.valid := servicingRequest.valid && !servicingRequest.bits.request.meta.exception && quickForwardable // OP-IMM, OP, AUIPC, LUI, OP-IMM-32, OP-32
   quickForward.bits.data := Mux(isTypeU(servicingRequest.bits.request.instruction), addition64bit.output, sameCycleArithmeticResult)
+
+  // updaing stalledRequest register
+  when (stalledRequest.valid) {
+    when (updateServicingRequest) { stalledRequest.valid := false.B }
+  }.otherwise {
+    when (fromIssue.fired && !updateServicingRequest) {
+      stalledRequest.valid := true.B
+      stalledRequest.bits := fromIssue.bits
+    }
+  }
+
+  // driving fromIssue interface
+  fromIssue.ready := !stalledRequest.valid
 
   //↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑
   //|||||||||||||||||||||| new design ||||||||||||||||||||
