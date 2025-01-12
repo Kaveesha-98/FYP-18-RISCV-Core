@@ -84,7 +84,13 @@ class exec extends Module {
   val toMemory  = IO(ComposableIO(Output(new execResult)))
   // val toFwd     = IO(ComposableIO(Output(new toFwdFrmExec))) // TODO: remove
   val fromIssue = IO(ComposableIO(Input(new execRequest)))
-  val branchResults = IO(Valid(UInt(XLEN.W)))
+  val branchResults = IO(Output(Valid(UInt(XLEN.W))))
+  // Below is used to forward the result of the instruction currently
+  // in servicingRequest to Issue stage.
+  val quickForward = IO(Output(Valid(new Bundle {
+    val fwdAddr = UInt(fwdAddrWidth.W)
+    val data = UInt(XLEN.W)
+  })))
 
   // This register will drive the inputs for the hardware arithmetic
   // execution units.
@@ -268,7 +274,11 @@ class exec extends Module {
   or64bit.inputs.src2 := servicingRequest.bits.request.src2
 
   // setting up inputs for and
-  and64bit.inputs.src1 := servicingRequest.bits.request.src1
+  when (isSystem(servicingRequest.bits.request.instruction)) {
+    and64bit.inputs.src1 := ~(servicingRequest.bits.request.src1)
+  }.otherwise {
+    and64bit.inputs.src1 := servicingRequest.bits.request.src1
+  }
   and64bit.inputs.src2 := servicingRequest.bits.request.src2
 
   // branch execution
@@ -308,6 +318,12 @@ class exec extends Module {
     case 7 => and64bit.output
   })(funct3Of(servicingRequest.bits.request.instruction))
 
+  val zicsrResult = VecInit.tabulate(4)(_ match {
+    case 2 => or64bit.output
+    case 3 => and64bit.output
+    case _: Int => servicingRequest.bits.request.src1
+  })(funct3Of(servicingRequest.bits.request.instruction)(1,0))
+
   // driving the toMemory interface
   toMemory.ready := servicedRequest.valid
   toMemory.bits := servicedRequest.bits
@@ -322,11 +338,12 @@ class exec extends Module {
       when (servicingRequest.bits.request.meta.exception) {
         servicedRequest.bits.result := servicingRequest.bits.request.src1
       }.otherwise {
-        servicedRequest.bits.result := Mux(
-          isMExtenMul(servicingRequest.bits.request.instruction),
-          Mux(isIntegerMultiply(servicingRequest.bits.request.instruction), multiply.output.bits.data, divide.output.bits.data),
-          sameCycleArithmeticResult
-        )
+        servicedRequest.bits.result := MuxCase(sameCycleArithmeticResult, Seq(
+          RV64Minstruction(servicingRequest.bits.request.instruction) -> Mux(isIntegerMultiply(servicingRequest.bits.request.instruction), multiply.output.bits.data, divide.output.bits.data),
+          isUnconditionalJump(servicingRequest.bits.request.instruction) -> (servicingRequest.bits.request.pc+4.U(XLEN.W)),
+          (isMemoryOperation(servicingRequest.bits.request.instruction) || isTypeU(servicingRequest.bits.request.instruction)) -> addition64bit.output,
+          isSystem(servicingRequest.bits.request.instruction) -> zicsrResult
+        ))
       }
       servicedRequest.bits.toFwd := Mux(RV64Minstruction(servicingRequest.bits.request.instruction),
         (multiply.output.ready || divide.output.ready), /* Appropriate interface will be ready */
@@ -394,6 +411,10 @@ class exec extends Module {
       servicingRequest.bits.executed := true.B
     }
   }
+
+  val quickForwardable = (servicingRequest.bits.request.instruction(6,4) === BitPat("b0?1")) && !RV64Minstruction(servicingRequest.bits.request.instruction)
+  quickForward.valid := servicingRequest.valid && quickForwardable // OP-IMM, OP, AUIPC, LUI, OP-IMM-32, OP-32
+  quickForward.bits.data := Mux(isTypeU(servicingRequest.bits.request.instruction), addition64bit.output, sameCycleArithmeticResult)
 
   //↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑
   //|||||||||||||||||||||| new design ||||||||||||||||||||
