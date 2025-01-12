@@ -362,6 +362,39 @@ class exec extends Module {
   divide.inputs.bits.mOp := divide.getmOp(servicingRequest.bits.request.instruction)
   divide.inputs.valid := isIntegerDivide(servicingRequest.bits.request.instruction) && servicingRequest.valid && !servicingRequest.bits.executed
 
+  // updating the servicingRequest register
+  val updateServicingRequest = !servicingRequest.valid || (
+    servicingRequestReadyForNextStage && !toMemoryInterfaceStalled
+  )
+  when (updateServicingRequest) {
+    when (stalledRequest.valid) {
+      // recovering from a stall, hence when this happens
+      // usually the servicingRequest was being occupied by a 
+      // different instruction in this cycle
+      servicingRequest.valid := true.B
+      servicingRequest.bits.request := stalledRequest.bits
+      servicingRequest.bits.executed := false.B
+    }.elsewhen(fromIssue.fired) {
+      servicingRequest.valid := true.B
+      servicingRequest.bits.request := fromIssue.bits
+      servicingRequest.bits.executed := false.B
+    }.elsewhen(servicingRequest.valid) {
+      // no instruction availble to service next
+      servicingRequest.valid := false.B
+    }
+  }.elsewhen(servicingRequest.valid) {
+    when (RV64Minstruction(servicingRequest.bits.request.instruction)) {
+      // waiting until operands are passed to relevant execution unit
+      when (multiply.inputs.fire || divide.inputs.fire) {
+        // fire will assert by relevant execution unit
+        servicingRequest.bits.executed := true.B
+      }
+    }.otherwise {
+      // after one cycle all other instructions will be executed
+      servicingRequest.bits.executed := true.B
+    }
+  }
+
   //↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑
   //|||||||||||||||||||||| new design ||||||||||||||||||||
   //======================================================
