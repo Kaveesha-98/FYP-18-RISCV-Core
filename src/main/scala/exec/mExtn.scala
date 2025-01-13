@@ -14,6 +14,7 @@ abstract class mExtn extends Module {
     val src1 = UInt(64.W)
     val src2 = UInt(64.W)
     val mOp = UInt(4.W) // {is32bitOp, funct3}
+    val fwdAddr = UInt(fwdAddrWidth.W)
   })))
 
   val output = IO(DecoupledIO(new Bundle {
@@ -28,6 +29,9 @@ abstract class mExtn extends Module {
 
   // Signals whether or not the module is processing a request
   // val processing = IO(Output(Bool()))
+
+  val fwdAddr = RegEnable(inputs.bits.fwdAddr, inputs.fire)
+  output.bits.fwdAddr := fwdAddr
 }
 
 class multiplier extends mExtn {
