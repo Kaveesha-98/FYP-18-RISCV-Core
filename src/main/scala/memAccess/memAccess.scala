@@ -26,6 +26,13 @@ class pushMemResultToRob extends composableInterface {
   val writeBackData = Output(UInt(64.W))
 } 
 
+class resultFromMemAccess extends Bundle {
+  val registerWriteBack = UInt(XLEN.W)
+  val instruction = UInt(ILEN.W)
+  val nextPC = UInt(XLEN.W)
+  val meta = new pipeline.ports.meta
+}
+
 class AXI(
   idWidth: Int = 1,
   addressWidth: Int = 32,

@@ -45,6 +45,7 @@ class execResult extends Bundle {
   val toFwd = Bool()
   val dataOnly = Bool()
   val meta        = new ports.meta
+  val nextPC = UInt(XLEN.W)
 }
 
 class toFwdFrmExec extends Bundle {
@@ -352,6 +353,7 @@ class exec extends Module {
         !isSystem(servicingRequest.bits.request.instruction))
       servicedRequest.bits.writeData := servicingRequest.bits.request.writeData
       servicedRequest.bits.meta := servicingRequest.bits.request.meta
+      servicedRequest.bits.nextPC := nextPCAfterServicingRequest
     }.elsewhen(multiply.output.valid) {
       servicedRequest.valid := true.B
       servicedRequest.bits.dataOnly := true.B

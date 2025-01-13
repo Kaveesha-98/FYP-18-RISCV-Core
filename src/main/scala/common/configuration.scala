@@ -40,8 +40,12 @@ object coreConfiguration {
   val iCacheTagWidth = 32 - iCacheLineWidth - iCacheOffsetWidth - 2
   val iCacheBlockSize = (1 << iCacheOffsetWidth) // number of instructions
   val dCacheDoubleWordOffsetWidth = 3
-  val dCacheLineWidth = 6
-  val dCacheTagWidth = 32 - dCacheLineWidth - dCacheDoubleWordOffsetWidth - 3
+  val dCacheOffsetLength = dCacheDoubleWordOffsetWidth + 3
+  val dCacheLineWidth = 6 // TODO: remove
+  val dCacheLineIndexWidth = 6
+  // address space can only be 32-bit
+  val addressSpaceSize = 32
+  val dCacheTagWidth = addressSpaceSize - dCacheLineIndexWidth - dCacheDoubleWordOffsetWidth - 3
   val dCacheBlockSize = (1 << dCacheDoubleWordOffsetWidth)
   val instructionBase = 0x0000000040000000L
   val instructionStart = instructionBase

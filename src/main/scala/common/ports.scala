@@ -48,6 +48,15 @@ class composableInterface extends Bundle {
   val fired = Input(Bool())
 }
 
+class resultToMemAccess extends Bundle {
+  val address = UInt(XLEN.W) // This is the result from exec 
+  val writeData = UInt(XLEN.W)
+  val fwdAddr = UInt(fwdAddrWidth.W)
+  val instruction = UInt(ILEN.W)
+  val meta = new pipeline.ports.meta
+  val nextPC = UInt(XLEN.W)
+}
+
 class ComposableIO[+T <: Data](gen: T) extends Bundle {
   /** A bit that will be asserted when `bits` is ready
     * @group Signals
