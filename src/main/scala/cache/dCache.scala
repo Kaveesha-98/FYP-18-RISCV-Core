@@ -72,6 +72,26 @@ class dCacheRegisters extends Module {
   lookUpResults.valid := doForward || RegNext(valids(getTagsIndex(address)), false.B)
 }
 
+/**
+  * All incoming instructions from Exec will be served here, outer memAccess
+  * module will take care of fetching data for cache-miss instances.
+  * 
+  * All instructions will input an address to fetch data from and then move
+  * to waitOnCacheRead register. All instructions will enter through the 
+  * interface resultsFromExec. If a stall is detected, then the instruction
+  * will be moved to stalledResultFromExec. 
+  * 
+  * All instructions will occupy waitOnCacheRead register only for just one
+  * cycle. Then depending on the state of resultsFromDCache register, the 
+  * instruction will then occupy resultsFromDCache register or stalledResultsFromDCache
+  * register.
+  * 
+  * Instructions that are sent to stalledResultsFromDCache will eventually
+  * be sent to resultsFromDCache register. 
+  *
+  */
 class dCache extends Module {
   val resultsFromExec = IO(ComposableIO(new resultToMemAccess))
+
+  val stalledResultFromExec = RegInit(Valid(resultsFromExec.bits.cloneType).Lit(_.valid -> false.B))
 }
