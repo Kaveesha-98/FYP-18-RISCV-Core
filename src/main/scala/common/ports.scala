@@ -57,6 +57,16 @@ class resultToMemAccess extends Bundle {
   val nextPC = UInt(XLEN.W)
 }
 
+class resultFromDCache extends Bundle {
+  val dataToRegisterFile = UInt(XLEN.W) // This is the result from memAccess To registerfile
+  val address = UInt(XLEN.W) // Address for memory writes
+  val writeData = UInt(XLEN.W)
+  val fwdAddr = UInt(fwdAddrWidth.W)
+  val instruction = UInt(ILEN.W)
+  val meta = new pipeline.ports.meta
+  val nextPC = UInt(XLEN.W)
+}
+
 class ComposableIO[+T <: Data](gen: T) extends Bundle {
   /** A bit that will be asserted when `bits` is ready
     * @group Signals

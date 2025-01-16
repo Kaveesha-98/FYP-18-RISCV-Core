@@ -88,10 +88,50 @@ class dCacheRegisters extends Module {
   * 
   * Instructions that are sent to stalledResultsFromDCache will eventually
   * be sent to resultsFromDCache register. 
+  * 
+  * IMPORTANT: Following does not currently support misaligned reads or writes
   *
   */
 class dCache extends Module {
+  // All results from exec will be entered through here
   val resultsFromExec = IO(ComposableIO(new resultToMemAccess))
+  val resultsToCommit = IO(ComposableIO(new resultFromDCache))
 
+  // If at the moment a new instruction enters through resultsFromExec
+  // the instruction currently occupying waitOnCacheRead will be moved
+  // to stalledResultsFromDCache, then, the instruction currently being
+  // fired from resultsFromExec will be moved to stalledResultsFromExec
+  //
+  // This register will also be occupyied by an instruction if an instruction
+  // occuying resultsFromDCache is a cache-miss (Does not include to writes 
+  // and peripheral accesses).
+  //
+  // Once the stalledResultsFromDCache is empty, the instruction occupying
+  // stalledResultFromExec will move on to waitOnCacheRead.
   val stalledResultFromExec = RegInit(Valid(resultsFromExec.bits.cloneType).Lit(_.valid -> false.B))
+
+  // All instructions fired from resultsFromExec will eventually reach here
+  // and in the next cycle will move on to either resultsFromDCache or
+  // stalledResultsFromDCache (or both).
+  // 
+  // When stalledResultsFromExec is empty, the instruction from resultsFromExec
+  // will occupy waitOnCacheRead, otherwise it will be instruction from 
+  // stalledResultsFromExec.
+  // 
+  // No instructions will be occupied by waitOnCacheRead if the current instruction
+  // occupying resultsFromDCache is a cache-miss due to atomic or load targeting
+  // main memory. Or the current instruction occupying waitOnCacheRead has to be
+  // moved to stalledResultsFromDCache becasue of a stall on resultsToCommit interface
+  val waitOnCacheRead = RegInit(Valid(resultsFromExec.bits.cloneType).Lit(_.valid -> false.B))
+
+  // When we detect an stall on resultsToCommit interface, the instruction currently
+  // occupying waitOnCacheRead will be stored here until stall on resultsToCommit
+  // interface has been handled
+  //
+  // However in the event that there is cache-miss on an atomic instruction and there
+  // are no stalls detected on resultsToCommit interface, then the instruction will be
+  // broken down to two u-codes (read and write), read part will be stored, Same story
+  // when recovering from a stall on resultsToCommit and the current instruction in 
+  // stalledResultsFromDcache is an atomic-instruction and is also a cache-miss.
+  val stalledResultsFromDCache = RegInit(Valid(resultsToCommit.bits.cloneType).Lit(_.valid -> false.B))
 }
