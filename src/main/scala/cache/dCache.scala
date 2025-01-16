@@ -97,6 +97,17 @@ class dCache extends Module {
   val resultsFromExec = IO(ComposableIO(new resultToMemAccess))
   val resultsToCommit = IO(ComposableIO(new resultFromDCache))
 
+  object instructionTypes {
+    // If there is cache-miss for an atomic instruction, then
+    // it will be broken to two u-codes atomicReadPart and
+    // atomicWritePart
+    val noMemoryOperation :: write :: read :: atomic :: atomicReadPart :: atmoicWritePart :: Nil = Enum(6)
+  }
+
+  object missStates {
+    val hit :: miss :: handlingMiss :: Nil = Enum(3)
+  }
+
   // If at the moment a new instruction enters through resultsFromExec
   // the instruction currently occupying waitOnCacheRead will be moved
   // to stalledResultsFromDCache, then, the instruction currently being
@@ -133,5 +144,26 @@ class dCache extends Module {
   // broken down to two u-codes (read and write), read part will be stored, Same story
   // when recovering from a stall on resultsToCommit and the current instruction in 
   // stalledResultsFromDcache is an atomic-instruction and is also a cache-miss.
-  val stalledResultsFromDCache = RegInit(Valid(resultsToCommit.bits.cloneType).Lit(_.valid -> false.B))
+  //
+  // For any instruction that resides in stalledResultsFromDCache, it must continously
+  // observe cacheWrite interface for the instructions targeted data and catch it
+  val stalledResultsFromDCache = RegInit(Valid(new Bundle {
+    val instruction = resultsToCommit.bits.cloneType
+    val instructionType = instructionTypes.noMemoryOperation.cloneType
+    val missState = missStates.hit.cloneType
+  }).Lit(_.valid -> false.B))
+
+  // Final destination of all the instructions arriving to this module. If it is
+  // a cache miss (because of a load instruction), then instruction will be stalled
+  // until cache-miss is handled. The instruction must catch its corresponding data
+  // from cacheWrite interface.
+  //
+  // Store instructions will be ready to commit reagardless miss status and will
+  // trigger a cache line fetch. Cache writes will not happen in this situation.
+  // 
+  // Only when the complete cacheline of the miss is written to cache will the 
+  // instruction will be a hit.
+  val resultsFromDCache = RegInit(stalledResultsFromDCache.cloneType.Lit(_.valid -> false.B))
+
+  
 }
