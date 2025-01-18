@@ -118,7 +118,17 @@ object coreConfiguration {
   //def isConditionalBranch(instruction: UInt) = instruction(6, 2) === "b11000"
   def opcode5BitsOf(instruction: UInt) = instruction(6, 2)
 
+  def atomicInstructionIsWordAccess(instruction: UInt) = funct3Of(instruction) === "b010".U(3.W)
+
   def WPRIbits(noOfBits: Int) = 0.U(noOfBits.W)
+
+  def isMISC_MEM(instruction: UInt) = instruction(6,0) === "b0001111".U(7.W)
+
+  def getCacheIndex(address: UInt) = address(dCacheLineIndexWidth+dCacheOffsetLength, dCacheDoubleWordOffsetWidth)
+  def getTagsIndex(address: UInt) = address(dCacheLineIndexWidth+dCacheOffsetLength, dCacheOffsetLength)
+  def getTagOfAddress(address: UInt) = address(addressSpaceSize-1, dCacheLineIndexWidth+dCacheOffsetLength)
+  // strips the last 3 LSBs
+  def getDoubleWordTarget(address: UInt) = address(addressSpaceSize-1,3)
 
   // val mstatusInitial = 0 // TODO: Set proper initial value of mstatus here
   val mstatusInitial = {

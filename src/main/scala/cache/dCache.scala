@@ -24,14 +24,9 @@ import chisel3.experimental.IO
 import pipeline.ports._
 import pipeline.configuration.coreConfiguration._
 import pipeline.memAccess.AXI
+import pipeline.decode.constants.opcode5MSBs
 
 class dCacheRegisters extends Module {
-
-  def getCacheIndex(address: UInt) = address(dCacheLineIndexWidth+dCacheOffsetLength, dCacheDoubleWordOffsetWidth)
-  def getTagsIndex(address: UInt) = address(dCacheLineIndexWidth+dCacheOffsetLength, dCacheOffsetLength)
-  def getTagOfAddress(address: UInt) = address(addressSpaceSize-1, dCacheLineIndexWidth+dCacheOffsetLength)
-  // strips the last 3 LSBs
-  def getDoubleWordTarget(address: UInt) = address(addressSpaceSize-1,3)
 
   // this will be a very simple module, we only take the
   // address as the input
@@ -101,6 +96,8 @@ class dCache extends Module {
     // If there is cache-miss for an atomic instruction, then
     // it will be broken to two u-codes atomicReadPart and
     // atomicWritePart
+    // 'fence' will belong to noMemoryOperation, memAccess will send
+    // the fired signal only when all older writes are complete.
     val noMemoryOperation :: write :: read :: atomic :: atomicReadPart :: atmoicWritePart :: Nil = Enum(6)
   }
 
@@ -165,5 +162,131 @@ class dCache extends Module {
   // instruction will be a hit.
   val resultsFromDCache = RegInit(stalledResultsFromDCache.cloneType.Lit(_.valid -> false.B))
 
-  
+  val cache = Module(new dCacheRegisters)
+  val cacheWrite = IO(Input(cache.cacheWrite.cloneType))
+
+  // When address belongs to main memory it will fetch a whole cacheline and when
+  // the instruction belongs to peripherals it will only fetch the amount required
+  // the requesting instruction
+  val fetchRequest = IO(ComposableIO(new Bundle {
+    val address = UInt(XLEN.W)
+    val instrucion = UInt(ILEN.W)
+  }))
+  fetchRequest.bits.address := Cat(resultsFromDCache.bits.instruction.address(XLEN-3),0.U(3.W))
+  fetchRequest.bits.instrucion := resultsFromDCache.bits.instruction.instruction
+  fetchRequest.ready := resultsFromDCache.valid && !resultsToCommit.ready && (resultsFromDCache.bits.missState === missStates.miss)
+
+  // given a memory read instuction, checks whether it requires sign extention
+  def needSignExtention(instruction: UInt) = !(instruction(14))
+
+  // Takes the double-word targeted by the access. i.e. the double-word at address
+  // address&(~7)
+  //
+  // Does right justification and sign extention as requested by the instruction
+  def convertForRegisterFileFromByteAlignedData (data: UInt, instruction: UInt, address: UInt) = {
+    // val bytesInDoubleWord = VecInit.tabulate(8)(i => data(i+7,i))
+    val bitsToSignExtend = VecInit.tabulate(8)(i => data(i+7))
+    val bitToSignExtend = VecInit.tabulate(3)(_ match {
+      case 0 => VecInit.tabulate(8)(i => data(i+7))(address(2,0))
+      case 1 => VecInit.tabulate(4)(i => data(i+15))(address(1,0))
+      case 2 => VecInit.tabulate(2)(i => data(i+31))(address(0).asUInt)
+    })(funct3Of(instruction)(1,0))
+    // val signExtendedByte = Fill(8, Mux(needSignExtention(instruction), bitToSignExtend, 0.U(1.W)))
+    val bitToFill = Mux(needSignExtention(instruction), bitToSignExtend, 0.U(1.W))
+    Cat(
+      Mux(funct3Of(instruction)==="b011".U(3.W), data(63,32), Fill(32, bitToFill)),
+      Mux(funct3Of(instruction)(1,0)>"b01".U(2.W), VecInit.tabulate(3)(i => data(i+31,i+16))(address(1,0)), Fill(16, bitToFill)),
+      Mux(funct3Of(instruction)(1,0)>="b01".U(2.W), VecInit.tabulate(7)(i => data(i+15,i+8))(address(2,0)), Fill(8, bitToFill)),
+      VecInit.tabulate(8)(i => data(i+7,i))(address(2,0))
+    )
+  }
+
+  val cacheLookUpResult = Wire(stalledResultsFromDCache.cloneType)
+  cacheLookUpResult.valid := waitOnCacheRead.valid
+  cacheLookUpResult.bits.instructionType := MuxLookup(opcode5BitsOf(waitOnCacheRead.bits.instruction), instructionTypes.noMemoryOperation, Seq(
+    opcode5MSBs.load.U(5.W) -> instructionTypes.read,
+    opcode5MSBs.store.U(5.W) -> instructionTypes.write,
+    opcode5MSBs.amos.U(5.W) -> instructionTypes.atomic
+  ))
+  cacheLookUpResult.bits.missState := Mux(cache.lookUpResults.valid && (getTagOfAddress(waitOnCacheRead.bits.address) === cache.lookUpResults.tag), missStates.hit, missStates.miss)
+  cacheLookUpResult.bits.instruction.address := waitOnCacheRead.bits.address
+  cacheLookUpResult.bits.instruction.dataToRegisterFile := convertForRegisterFileFromByteAlignedData(
+    Mux(
+      resultsFromDCache.valid && (getDoubleWordTarget(resultsFromDCache.bits.instruction.address) === getDoubleWordTarget(waitOnCacheRead.bits.address)) && resultsFromDCache.bits.instruction.writeStrobe.andR,
+      resultsFromDCache.bits.instruction.writeData,
+      cache.lookUpResults.data
+    ),waitOnCacheRead.bits.instruction, waitOnCacheRead.bits.address
+  )
+
+  // reservation sets for semaphore instructions
+  // we have two because the emulator has 2
+  val reservationSet32bits = RegInit(Valid(new Bundle {
+    val address = UInt(XLEN.W)
+    val data = UInt(XLEN.W)
+  }).Lit(_.valid -> false.B))
+  val reservationSet64bits = RegInit(reservationSet32bits.cloneType.Lit(_.valid -> false.B))
+
+  val atomicCalculationInputs = Wire(new Bundle {
+    val src1 = UInt(XLEN.W)
+    val src2 = UInt(XLEN.W)
+  })
+  when (stalledResultsFromDCache.valid) {
+    // 'dataToRegisterFile' should have been gotten from cacheWrite and properly justified
+    atomicCalculationInputs.src1 := stalledResultsFromDCache.bits.instruction.dataToRegisterFile
+    // For word access atomics, we need to sign extend writeData for proper functionality
+    atomicCalculationInputs.src2 := Cat(
+      Mux(
+        atomicInstructionIsWordAccess(stalledResultsFromDCache.bits.instruction.instruction), 
+        Fill(32, stalledResultsFromDCache.bits.instruction.writeData(31)), 
+        stalledResultsFromDCache.bits.instruction.writeData(63,32)
+      ), 
+      stalledResultsFromDCache.bits.instruction.writeData(31,0))
+  }.otherwise {
+    // Only other source is 
+  }
+
+  // updating resultsFromDCache register
+  //
+  // This also drives the resultsToCommit interface
+  //
+  // read instructions are not ready until the corresponding cacheline has been
+  // completely fetched. atomicWritePart micro-instrcution will not reach here.
+  // atomicReadPart micro-instruction will never be commited. If there is an
+  // atomic (complete) instrucion, it should always be a hit, hence, should always
+  // be ready to commit. write instructions can be commited even when cache-miss.
+  // memAccess will take care of writing to memory without writing to cache
+  //
+  // For debugging we might have to change write behaviour to only commit when
+  // the whole cacheline has been fetched to cache.
+  resultsToCommit.ready := resultsFromDCache.valid && MuxLookup(resultsFromDCache.bits.instructionType, true.B, Seq(
+    instructionTypes.read -> (resultsFromDCache.bits.missState === missStates.hit),
+    instructionTypes.atomicReadPart -> false.B
+  ))
+  resultsToCommit.bits := resultsFromDCache.bits.instruction
+
+  when (resultsFromDCache.valid && !resultsToCommit.ready && (resultsFromDCache.bits.missState === missStates.miss)) {
+    // There should be instructions that are awaiting for a cacheline
+    // For now should ideally be atmoicReadPart and read cacheline misses
+    when (cacheWrite.valid) {
+      // We are now forwarding the relevant data to the register. We need to make sure
+      // the addresses target the same double-word
+      when (cacheWrite.bits.address(XLEN-1,3) === resultsFromDCache.bits.instruction.address(XLEN-1,3)) {
+        resultsFromDCache.bits.instruction.dataToRegisterFile := convertForRegisterFileFromByteAlignedData(cacheWrite.bits.data, resultsFromDCache.bits.instruction.instruction, resultsFromDCache.bits.instruction.address)
+        // we do not set it as hit, until the complete cache line has been fetched
+      }
+      when (cacheWrite.bits.last) {
+        resultsFromDCache.bits.missState := missStates.hit
+      }
+    }
+    when (resultsFromDCache.bits.missState === missStates.miss) {
+      // In this state the d-cache is waiting for memAccess to accept the request to
+      // fetch data from main memory or peripheral data
+      when (fetchRequest.fired) {
+        resultsFromDCache.bits.missState := missStates.handlingMiss
+      }
+    }
+  }.elsewhen(resultsFromDCache.valid && (resultsFromDCache.bits.instructionType === instructionTypes.atomicReadPart)) {
+    // atomic writePart should be in stalledResultsFromDCache
+
+  }
 }

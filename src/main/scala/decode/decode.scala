@@ -129,7 +129,7 @@ class decode(val hartid:Int = 0) extends Module {
   def containUpperImmediate(instruction: UInt) = instruction(4, 2) === "b101".U(3.W)
   def isSystem(instruction: UInt) = instruction(6, 2) === "b11100".U(5.W)
   def isIllegal(instruction: UInt) = false.B
-  def isSystemCall(instruction: UInt) = Cat(rs2Of(instruction), funct3Of(instruction), opcode5BitsOf(instruction)) === "b0001000011100".U(13.W)
+  def isSystemCall(instruction: UInt) = Cat(rs2Of(instruction), funct3Of(instruction), opcode5BitsOf(instruction)) === opcode5MSBs.system.U(5.W)
   def isJAL(instruction: UInt) = instruction(6,2) === "b11011".U(5.W)
   /* interrupts are enterred as a custom instruction will lower 30 bits equal to ecall */
   def isECALLorInterrupt(instruction: UInt) = instruction(30, 0) === "h00000073".U(30.W)
