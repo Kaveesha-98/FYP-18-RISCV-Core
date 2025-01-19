@@ -307,6 +307,7 @@ class dCache extends Module {
         Mux(funct3Of(atomicCalculationInputs.instruction)==="b010".U(3.W), true.B, atomicCalculationInputs.src1(63,32) === reservationSet64bits.bits.data(63,32))
       )
 
+    reservationBooked && targetsSameAddress && memoryUnchangedAfterReserving
   }
 
   // updating resultsFromDCache register
