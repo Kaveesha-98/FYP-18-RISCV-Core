@@ -217,6 +217,17 @@ class dCache extends Module {
       cache.lookUpResults.data
     ),waitOnCacheRead.bits.instruction, waitOnCacheRead.bits.address
   )
+  cacheLookUpResult.bits.instruction.fwdAddr := waitOnCacheRead.bits.fwdAddr
+  cacheLookUpResult.bits.instruction.instruction := waitOnCacheRead.bits.instruction
+  cacheLookUpResult.bits.instruction.meta := waitOnCacheRead.bits.meta
+  cacheLookUpResult.bits.instruction.nextPC := waitOnCacheRead.bits.nextPC
+  cacheLookUpResult.bits.instruction.writeData := waitOnCacheRead.bits.writeData
+  cacheLookUpResult.bits.instruction.writeStrobe := VecInit.tabulate(4)(_ match {
+    case 0 => "h01".U(8.W)
+    case 1 => "h03".U(8.W)
+    case 2 => "h0f".U(8.W)
+    case 3 => "hff".U(8.W)
+  })(funct3Of(waitOnCacheRead.bits.instruction)(1,0))
 
   // reservation sets for semaphore instructions
   // we have two because the emulator has 2
