@@ -233,7 +233,7 @@ class dCache extends Module {
   // we have two because the emulator has 2
   val reservationSet32bits = RegInit(Valid(new Bundle {
     val address = UInt(XLEN.W)
-    val data = UInt(XLEN.W)
+    val data = UInt((XLEN/2).W)
   }).Lit(_.valid -> false.B))
   val reservationSet64bits = RegInit(reservationSet32bits.cloneType.Lit(_.valid -> false.B))
 
@@ -243,12 +243,14 @@ class dCache extends Module {
     val src1 = UInt(XLEN.W)
     val src2 = UInt(XLEN.W)
     val instruction = UInt(ILEN.W)
+    val address = UInt(XLEN.W)
   })
 
   // Getting the inputs for atomic calculation, we take the appropriate sign extended 32bit value
   // for word size requests
   when (stalledResultsFromDCache.valid) {
     atomicCalculationInputs.instruction := stalledResultsFromDCache.bits.instruction.instruction
+    atomicCalculationInputs.address := stalledResultsFromDCache.bits.instruction.address
     // 'dataToRegisterFile' should have byte aligned data, so we have to pick correct data for computation
     atomicCalculationInputs.src1 := convertForRegisterFileFromByteAlignedData(stalledResultsFromDCache.bits.instruction.dataToRegisterFile, stalledResultsFromDCache.bits.instruction.instruction, stalledResultsFromDCache.bits.instruction.address)
     // For word access atomics, we need to sign extend writeData for proper functionality
@@ -261,6 +263,7 @@ class dCache extends Module {
       stalledResultsFromDCache.bits.instruction.writeData(31,0))
   }.otherwise {
     atomicCalculationInputs.instruction := waitOnCacheRead.bits.instruction
+    atomicCalculationInputs.address := waitOnCacheRead.bits.address
     // Only other source is directly from cache
     atomicCalculationInputs.src1 := convertForRegisterFileFromByteAlignedData(cache.lookUpResults.data, waitOnCacheRead.bits.instruction, waitOnCacheRead.bits.address)
     atomicCalculationInputs.src2 := Cat(
@@ -292,6 +295,19 @@ class dCache extends Module {
 
   // This is the result from atomics that will be written to memory (in case of sc.*, only when it succeeds)
   val atomicResult = Mux(atomicCalculationInputs.instruction(28,27) === 0.U(2.W), atomicCalculation, atomicCalculationInputs.src2)
+
+  // store conditional result
+  val storeConditionalResult = {
+    val reservationBooked = Mux(funct3Of(atomicCalculationInputs.instruction)==="b010".U(3.W), reservationSet32bits.valid, reservationSet64bits.valid)
+
+    val targetsSameAddress = atomicCalculationInputs.address === Mux(funct3Of(atomicCalculationInputs.instruction)==="b010".U(3.W), reservationSet32bits.bits.address, reservationSet64bits.bits.address)
+
+    val memoryUnchangedAfterReserving = 
+      (atomicCalculationInputs.src1(31,0) === Mux(funct3Of(atomicCalculationInputs.instruction)==="b010".U(3.W), reservationSet32bits.bits.data, reservationSet64bits.bits.data(31,0))) && (
+        Mux(funct3Of(atomicCalculationInputs.instruction)==="b010".U(3.W), true.B, atomicCalculationInputs.src1(63,32) === reservationSet64bits.bits.data(63,32))
+      )
+
+  }
 
   // updating resultsFromDCache register
   //
