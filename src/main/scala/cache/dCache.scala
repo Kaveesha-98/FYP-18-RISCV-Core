@@ -237,13 +237,20 @@ class dCache extends Module {
   }).Lit(_.valid -> false.B))
   val reservationSet64bits = RegInit(reservationSet32bits.cloneType.Lit(_.valid -> false.B))
 
+  // The atmoic request can come from two places waitOnCacheRead and stalledResultsFromDCache. But
+  // at any given time at most only one can have a request (of any kind)
   val atomicCalculationInputs = Wire(new Bundle {
     val src1 = UInt(XLEN.W)
     val src2 = UInt(XLEN.W)
+    val instruction = UInt(ILEN.W)
   })
+
+  // Getting the inputs for atomic calculation, we take the appropriate sign extended 32bit value
+  // for word size requests
   when (stalledResultsFromDCache.valid) {
-    // 'dataToRegisterFile' should have been gotten from cacheWrite and properly justified
-    atomicCalculationInputs.src1 := stalledResultsFromDCache.bits.instruction.dataToRegisterFile
+    atomicCalculationInputs.instruction := stalledResultsFromDCache.bits.instruction.instruction
+    // 'dataToRegisterFile' should have byte aligned data, so we have to pick correct data for computation
+    atomicCalculationInputs.src1 := convertForRegisterFileFromByteAlignedData(stalledResultsFromDCache.bits.instruction.dataToRegisterFile, stalledResultsFromDCache.bits.instruction.instruction, stalledResultsFromDCache.bits.instruction.address)
     // For word access atomics, we need to sign extend writeData for proper functionality
     atomicCalculationInputs.src2 := Cat(
       Mux(
@@ -253,8 +260,38 @@ class dCache extends Module {
       ), 
       stalledResultsFromDCache.bits.instruction.writeData(31,0))
   }.otherwise {
-    // Only other source is 
+    atomicCalculationInputs.instruction := waitOnCacheRead.bits.instruction
+    // Only other source is directly from cache
+    atomicCalculationInputs.src1 := convertForRegisterFileFromByteAlignedData(cache.lookUpResults.data, waitOnCacheRead.bits.instruction, waitOnCacheRead.bits.address)
+    atomicCalculationInputs.src2 := Cat(
+      Mux(
+        atomicInstructionIsWordAccess(waitOnCacheRead.bits.instruction), 
+        Fill(32, waitOnCacheRead.bits.writeData(31)), 
+        waitOnCacheRead.bits.writeData(63,32)
+      ), 
+      waitOnCacheRead.bits.writeData(31,0))
   }
+  // AMOMAX, AMOMIN, AMOMINU, AMOMAXU
+  val unsigned63slt = atomicCalculationInputs.src1(62,0) < atomicCalculationInputs.src2(62,0)
+  val compareResultSignedOrUnsignedLessThan = Mux(
+    atomicCalculationInputs.src1(63) === atomicCalculationInputs.src2(63),
+    unsigned63slt, Mux(atomicCalculationInputs.instruction(30), atomicCalculationInputs.src2(63), atomicCalculationInputs.src1(63))
+  )
+  val atomicCompareCalculation = Mux(compareResultSignedOrUnsignedLessThan ^ atomicCalculationInputs.instruction(29), atomicCalculationInputs.src1, atomicCalculationInputs.src2)
+
+  // AMOADD, AMOXOR, AMOOR, AMOAND
+  val atomicArithneticCalculation = VecInit.tabulate(4)(_ match {
+    case 0 => atomicCalculationInputs.src1 + atomicCalculationInputs.src2
+    case 1 => atomicCalculationInputs.src1 ^ atomicCalculationInputs.src2
+    case 2 => atomicCalculationInputs.src1 | atomicCalculationInputs.src2
+    case 3 => atomicCalculationInputs.src1 & atomicCalculationInputs.src2
+  })
+
+  // AMOADD, AMOXOR, AMOOR, AMOAND, AMOMAX, AMOMIN, AMOMINU, AMOMAXU
+  val atomicCalculation = Mux(atomicCalculationInputs.instruction(31), atomicCompareCalculation, atomicArithneticCalculation)
+
+  // This is the result from atomics that will be written to memory (in case of sc.*, only when it succeeds)
+  val atomicResult = Mux(atomicCalculationInputs.instruction(28,27) === 0.U(2.W), atomicCalculation, atomicCalculationInputs.src2)
 
   // updating resultsFromDCache register
   //
