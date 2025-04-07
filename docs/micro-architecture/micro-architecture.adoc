@@ -1,0 +1,64 @@
+# Core Pipeline
+
+## Memory Access Unit (src/main/scala/memAccess/memAccess.scala)
+
+### L1 Data Cache (src/main/scala/cache/dCache.scala)
+last commit: 
+
+#### Main registers
+1. `To be completed Later`
+
+#### `resultsFromDCache`
+
+##### Updating rules
+
+[cols="1,2", options="header", cols="<,<"]
+|===
+| Field values | Rule
+
+| `valid === False.B` | 
+No instruction should be present on `stalledResultsFromDCache`. 
+
+`resultsFromDCache := cacheLookUpResult`
+
+when `(resultsFromDCache.valid === False.B)`, `cacheLookUpResult` should only depend on `waitOnCacheRead`. How `cacheLookUpResult` is updated will be explained later.
+| `(valid === True.B) && (instructionType === noMemoryOperation)` | 
+when `(resultsToCommit.fired === True.B)`, `resultsFromDCache := cacheLookUpResult`. Otherwise not updated
+| `(valid === True.B) && (instructionType === write)` | 
+when `(resultsToCommit.fired === True.B)`, `resultsFromDCache := cacheLookUpResult`. Otherwise not updated
+
+On a cache miss for write instructions, we follow write-through policy. Hence, no need to wait for cacheline to be fetched.
+
+when `(resultsToCommit.fired === True.B)`, assume the write data will be transfered to appropriate write handler.
+| `(valid === True.B) && (instructionType === read) && (missState === hit)` | 
+when `(resultsToCommit.fired === True.B)`, `resultsFromDCache := cacheLookUpResult`. Otherwise not updated
+
+`(resultsToCommit.fired === True.B) => (missState === hit)`
+| `(valid === True.B) && (missState === miss)` | 
+when `(fetchRequest.fired === True.B)`, `resultsFromDCache.missState := handlingMiss`. Otherwise not updated. No other fields are updated
+
+When a cache-miss is recevied, we request the cacheline through `fetchRequest` interface.
+
+`(missState === miss) => (instructionType ∈ {atomicRead, read})`
+
+When an atomic instruction is a miss, we break the instruction to `atmoicRead` and `atomicWrite` to handle the miss. The `atmoicRead` part will be moved to this register and the miss will be handled like a normal read
+| `(valid === True.B) && (missState === handlingMiss)` | 
+when `(cacheWrite.valid === True.B) && (cacheWrite.bits.address(XLEN-1,3) === resultsFromDCache.bits.instruction.address(XLEN-1,3))`, `dataToRegisterFile` is updated with read data in proper justification and sign extension. 
+
+`(missState === miss) => (instructionType ∈ {atomicRead, read})`
+
+In this state we are waiting for the corresponding cache line to fill the cache. Hence:
+`(cacheWrite.valid === True.B) => (missState === handlingMiss)`
+
+When `(cacheWrite.valid === True.B) && (cacheWrite.last === True.B)`, then `missState := hit`.
+
+No other fields are updated.
+| `(valid === True.B) && (instructionType === atomic)` | 
+when `(resultsToCommit.fired === True.B)`, `resultsFromDCache := cacheLookUpResult`. Otherwise not updated.
+
+`(instructionType === atomic) => (missState === hit)`
+
+How we handle miss for atmoic instructions are different from how we handle others
+|===
+_No other field combinations are possible_
+
