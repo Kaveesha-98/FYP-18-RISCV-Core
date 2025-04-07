@@ -39,9 +39,11 @@ when `(fetchRequest.fired === True.B)`, `resultsFromDCache.missState := handling
 
 When a cache-miss is recevied, we request the cacheline through `fetchRequest` interface.
 
-`(missState === miss) => (instructionType ∈ {atomicRead, read})`
+`(missState === miss) => (instructionType ∈ {atomicRead, read, write})`
 
-When an atomic instruction is a miss, we break the instruction to `atmoicRead` and `atomicWrite` to handle the miss. The `atmoicRead` part will be moved to this register and the miss will be handled like a normal read
+When an atomic instruction is a miss, we break the instruction to `atmoicRead` and `atomicWrite` to handle the miss. The `atmoicRead` part will be moved to this register and the miss will be handled like a normal read.
+
+Data is not fetched on a cache-miss of a write instruction.
 | `(valid === True.B) && (missState === handlingMiss)` | 
 when `(cacheWrite.valid === True.B) && (cacheWrite.bits.address(XLEN-1,3) === resultsFromDCache.bits.instruction.address(XLEN-1,3))`, `dataToRegisterFile` is updated with read data in proper justification and sign extension. 
 
