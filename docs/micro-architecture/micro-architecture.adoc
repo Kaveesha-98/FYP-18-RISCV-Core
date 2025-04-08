@@ -8,6 +8,10 @@ last commit:
 #### Main registers
 1. `To be completed Later`
 
+#### Possible Performace Issue
+* We wait for whole cacheline to be fetched before a stalled instruction can be commited, this obviously increases the latency of the instruction
+** This is done to limit possible hardware states, hence reduce errors
+
 #### `resultsFromDCache`
 
 ##### Updating rules
@@ -45,9 +49,9 @@ When an atomic instruction is a miss, we break the instruction to `atmoicRead` a
 
 Data is not fetched on a cache-miss of a write instruction.
 | `(valid === True.B) && (missState === handlingMiss)` | 
-when `(cacheWrite.valid === True.B) && (cacheWrite.bits.address(XLEN-1,3) === resultsFromDCache.bits.instruction.address(XLEN-1,3))`, `dataToRegisterFile` is updated with read data in proper justification and sign extension. 
+when `(cacheWrite.valid === True.B) && (cacheWrite.bits.address(XLEN-1,3) === resultsFromDCache.bits.instruction.address(XLEN-1,3))`, `dataToRegisterFile` is updated with read data in proper justification and sign extension derived from `cacheWrite.data`. 
 
-`(missState === miss) => (instructionType ∈ {atomicRead, read})`
+`(missState === handlingMiss) => (instructionType ∈ {atomicRead, read})`
 
 In this state we are waiting for the corresponding cache line to fill the cache. Hence:
 `(cacheWrite.valid === True.B) => (missState === handlingMiss)`
@@ -64,3 +68,42 @@ How we handle miss for atmoic instructions are different from how we handle othe
 |===
 _No other field combinations are possible_
 
+#### `stalledResultsFromDCache`
+
+Used to handle stalls on `resultsToCommit` interface.
+
+`stalledResultsFromDCache.valid => resultsFromDCache.valid`
+
+##### Updating rules
+
+[cols="1,2", options="header", cols="<,<"]
+|===
+| Field values | Rule
+| `valid === False.B` a| 
+When one or more of the following conditions are met in the current cycle, bit will be updated according to the instruction present in `waitOnCacheRead` register.
+
+* `resultsToCommit` interface is stalled, (i.e. `resultsToCommit.ready && !resultsToCommit.fired`)
+** `stalledResultFromDCache := cacheLookUpResult`
+* An atomic instruction is a cache-miss, (i.e. `waitOnCacheRead.instructionType === atmoic && cacheLookUpResult.miss === miss`)
+** `stalledResultFromDCache := cacheLookUpResult`
+** `instructionType := atomicWrite`
+| `(valid === True.B) && (resultsFromDCache.missState === handlingMiss) && (getTagsIndex(cacheWrite.bits.address) === getTagsIndex(stalledResultsFromDCache.bits.instruction.address))` a| 
+when `(cacheWrite.valid === True.B) && (cacheWrite.bits.address(XLEN-1,3) === stalledResultsFromDCache.bits.instruction.address(XLEN-1,3))`, `dataToRegisterFile` is updated with read data in proper justification and sign extension derived from `cacheWrite.data`. 
+
+In this state we are waiting for the corresponding cache line to fill the cache according fetch Request created by the instruction in `resultFromDCache`. Hence:
+
+When cache line tag of the target address of both instructions in stalledResultFromDCache and resultFromDCache, the data for the instruction:
+
+1. Can be received through `cache`, in which case, data will not arrive through `cacheWrite` interface while the instruction is in this register
+2. Can be received through `cacheWrite` interface, as stated above `dataToRegisterFile` have to be updated correspondigly.
+
+When `(cacheWrite.valid === True.B) && (cacheWrite.last === True.B) && ((getTagsIndex(cacheWrite.bits.address) === getTagsIndex(stalledResultsFromDCache.bits.instruction.address)))`, then `missState := hit`.
+
+`(getTagsIndex(cacheWrite.bits.address) === getTagsIndex(stalledResultsFromDCache.bits.instruction.address)) => ((resultsFromDCache.missState === hit) => (stalledResultsFromDCache.missState === hit))`
+
+| `(valid === True.B) && (resultsToCommit.fired)` |
+When `(instructionType === atomic) && (missState === miss)`, `instructionType := atomicWrite`. Otherwise valid := False.B
+
+No other fields are updated.
+|===
+_No other field combinations are possible_
