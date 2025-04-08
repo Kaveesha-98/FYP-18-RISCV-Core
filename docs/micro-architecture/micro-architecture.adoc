@@ -33,7 +33,7 @@ when `(resultsToCommit.fired === True.B)`, assume the write data will be transfe
 | `(valid === True.B) && (instructionType === read) && (missState === hit)` | 
 when `(resultsToCommit.fired === True.B)`, `resultsFromDCache := cacheLookUpResult`. Otherwise not updated
 
-`(resultsToCommit.fired === True.B) => (missState === hit)`
+`(resultsToCommit.fired === True.B) => ((missState === hit) \|\| instructionType === write)`
 | `(valid === True.B) && (missState === miss)` | 
 when `(fetchRequest.fired === True.B)`, `resultsFromDCache.missState := handlingMiss`. Otherwise not updated. No other fields are updated
 
