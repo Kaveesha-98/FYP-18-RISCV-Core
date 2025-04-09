@@ -107,3 +107,30 @@ When `(instructionType === atomic) && (missState === miss)`, `instructionType :=
 No other fields are updated.
 |===
 _No other field combinations are possible_
+
+#### `waitOnCacheRead`
+
+This register is used to store the instruction that was connented `cache.address` in the previous cycle. Such that we can pipeline cache reading, which has a 1 cycle latency.
+
+All instructions will reside in this register for only just one cycle.
+
+##### Updating rules
+
+[cols="1,2", options="header", cols="<,<"]
+|===
+| Field values | Rule
+|`(valid === False.B) && !stalledResultsFromDCache.valid`|
+`waitOnCacheRead := cacheAddressInputInstruction`
+| `(valid === True.B)` |
+The instruction on this register will move to `stalledResultsFromDCache` when instruction in resultsFromDCache is bubbled.
+`when (isBubbled(resultsFromDCache)) { valid := False.B }`
+
+If the current instruction is atomic and a cache-miss then, micro-instruction atomic-write is populated on to `stalledResultsFromDCache`.
+`when ((cacheLookUpResult.instructionType === atomic) && (cacheLookUpResult.missStatus === miss)) { valid := False.B }`
+
+In both of the above conditions, there will be instructions occupying both `resultsFromDCache` and `stalledResultsFromDCache`. If both above conditions are not met then,
+`waitOnCacheRead := cacheAddressInputInstruction`
+
+`waitOnCacheRead.valid => !(stalledResultsFromDCache.valid && resultsFromDCache.valid)`
+|===
+_No other field combinations are possible_
