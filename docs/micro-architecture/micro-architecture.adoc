@@ -134,3 +134,25 @@ In both of the above conditions, there will be instructions occupying both `resu
 `waitOnCacheRead.valid => !(stalledResultsFromDCache.valid && resultsFromDCache.valid)`
 |===
 _No other field combinations are possible_
+
+#### `stalledResultFromExec`
+
+This register is used for flow control. This register will play a keyrole in implementing unaligned accesses in the future.
+
+##### Updating rules
+
+[cols="1,2", options="header", cols="<,<"]
+|===
+| Field values | Rule
+| `valid === False.B` | In this state `stalledResultsFromDCache.valid === False.B`
+
+i.e. `stalledResultFromExec.valid <==> stalledResultsFromDCache.valid`
+
+The register will buffer the instruction from `resultsFromExec` if both `stalledResultsFromDCache` and `resultsFromDCache` will be filled in the next cycle, or `stalledResultsFromDCache.valid === True.B` in the current cycle. Then `stalledResultFromExec := cacheAddressInputInstruction`
+| valid === True.B | 
+`when (!stalledResultsFromDCache.valid) { valid := false.B }`
+
+when `stalledResultsFromDCache.valid === False.B`, we are recovering from a stall.
+|===
+_No other field combinations are possible_
+
