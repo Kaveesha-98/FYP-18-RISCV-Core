@@ -6,7 +6,14 @@
 last commit: 
 
 #### Main registers
-1. `To be completed Later`
+1. `resultsFromDCache`
+2. `stalledResultsFromDCache`
+3. `waitOnCacheRead`
+4. `stalledResultFromExec`
+
+#### Main Wires
+1. `cacheLookUpResult`
+2. `cacheAddressInputInstruction`
 
 #### Possible Performace Issue
 * We wait for whole cacheline to be fetched before a stalled instruction can be commited, this obviously increases the latency of the instruction
@@ -155,4 +162,19 @@ The register will buffer the instruction from `resultsFromExec` if both `stalled
 when `stalledResultsFromDCache.valid === False.B`, we are recovering from a stall.
 |===
 _No other field combinations are possible_
+
+#### cacheLookUpResult
+
+Results of cache look up will be given here, including forwarding any data from cacheWrite. Arithmetic calculation results for atmoic instructions will also be given here.
+
+`cacheLookUpResult` will be dervied from either `stalledResultsFromDCache` or `waitOnCacheRead` (with `cache.lookUpResults`). When `stalledResultsFromDCache.valid` is high, `cacheLookUpResult` will be derived from `stalledResultsFromDCache`.
+
+When the instruction is a peripheral access, then `missStates := miss` and no data is forwarded.
+
+When calculating write data (`cacheLookUpResult.bits.instruction.writeData`), the final data needs to be properly byte aligned. If a cache-hit has occured for the instruction, then the proper double word has to be modified. If the instruction is to be sent to `stalledResultsFromDCache`, then `writeData` is not modified and remain as present in `rs2`.
+
+#### cacheAddressInputInstruction
+
+The instruction that drives `cache.address`. 
+`Mux(stalledResultsFromExec.valid, stalledResultsFromExec, resultsFromExec)`
 
